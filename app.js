@@ -629,9 +629,16 @@ function render() {
 
 function renderBadge() {
   const b = els.connectionBadge;
-  b.textContent = "Save flow connected";
-  b.classList.remove("warning");
+
+  if (state.mode === "flow") {
+    b.textContent = "Power Automate connected";
+    b.classList.remove("warning");
+  } else {
+    b.textContent = "⚠ Flow unavailable";
+    b.classList.add("warning");
+  }
 }
+
 
 function renderSummaries() {
   const f = filtered();
