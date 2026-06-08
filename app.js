@@ -575,6 +575,48 @@ async function init() {
   await loadRecords();
   render();
 }
+async function loadRecords() {
+  setBusy(true);
+  try {
+    const res = await fetch(CONFIG.listFlowUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+
+    if (!res.ok) throw new Error("List flow failed");
+
+    const data = await res.json();
+
+    const rows = Array.isArray(data) ? data : (data.value || []);
+
+    state.records = rows.map(item => ({
+      id: item.Id || "",
+      ideaName: item.Title || "",
+      owner: item.field_1 || "",
+      department: item.field_2 || "",
+      status: item.field_3 || "Intake",
+      valueProposition: item.field_11 || "",
+      costSavings: item.field_12 || 0,
+      efficiencyGain: item.field_13 || 0,
+      paybackMonths: item.field_14 || 0,
+      adoptionRate: item.field_16 || 0,
+      revenueImpact: item.field_17 || 0,
+      created: item.Created || "",
+      modified: item.Modified || ""
+    }));
+
+    state.mode = "flow";
+
+  } catch (err) {
+    console.error(err);
+    state.records = [];
+    state.mode = "local-warning";
+    showToast("⚠ Could not load SharePoint data");
+  } finally {
+    setBusy(false);
+  }
+}
 
 function cacheElements() {
   [
