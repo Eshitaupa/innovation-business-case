@@ -506,14 +506,8 @@
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   storageKey: "ogcInnovationBusinessCases.v1",
-
-  // fixed string
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
-
-  // you don't have list flow yet, so leave blank for now
   listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
-
-  // your existing save flow URL
   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
   fieldMap: {
@@ -561,7 +555,6 @@ const CONFIG = {
   ])
 };
 
-// ── State ─────────────────────────────────────────────────────────────────────
 const state = {
   records: [],
   mode: "save-flow-only",
@@ -576,7 +569,6 @@ const els = {};
 
 document.addEventListener("DOMContentLoaded", init);
 
-// ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   cacheElements();
   bindEvents();
@@ -629,7 +621,6 @@ function loadLocalRecords() {
   state.records = localStore.fetchItems();
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
 function render() {
   renderBadge();
   renderSummaries();
@@ -701,7 +692,6 @@ function filtered() {
     .sort((a, b) => new Date(b.modified || b.created || 0) - new Date(a.modified || a.created || 0));
 }
 
-// ── Drawer ────────────────────────────────────────────────────────────────────
 function openDrawer(record = null) {
   els.caseForm.reset();
   els.drawerTitle.textContent = record ? "Edit innovation case" : "New innovation case";
@@ -729,7 +719,6 @@ function closeDrawer() {
   els.drawerBackdrop.hidden = true;
 }
 
-// ── Save ──────────────────────────────────────────────────────────────────────
 async function saveCurrentCase(e) {
   e.preventDefault();
   const record = formToRecord(new FormData(els.caseForm));
@@ -804,7 +793,6 @@ function upsert(record) {
   i >= 0 ? state.records.splice(i, 1, record) : state.records.unshift(record);
 }
 
-// ── CSV export ────────────────────────────────────────────────────────────────
 function exportCsv() {
   const cols = [
     ["ideaName","Business case idea"],["status","Status"],["owner","Owner"],
@@ -841,7 +829,6 @@ function exportCsv() {
   a.remove();
 }
 
-// ── Local storage fallback ────────────────────────────────────────────────────
 const localStore = {
   all() {
     try { return JSON.parse(localStorage.getItem(CONFIG.storageKey) || "[]"); }
