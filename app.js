@@ -580,7 +580,7 @@ document.addEventListener("DOMContentLoaded", init);
 async function init() {
   cacheElements();
   bindEvents();
-  loadLocalRecords();
+  await loadRecords();
   render();
 }
 
@@ -613,11 +613,10 @@ function bindEvents() {
     renderTable();
   });
 
-  els.refreshButton.addEventListener("click", () => {
-    loadLocalRecords();
-    render();
-    showToast("Showing local view. Save goes to SharePoint via Power Automate.");
-  });
+  els.refreshButton.addEventListener("click", async () => {
+  await loadRecords();
+  render();
+});
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && els.drawer.classList.contains("open")) {
