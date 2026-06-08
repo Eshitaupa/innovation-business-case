@@ -507,9 +507,13 @@ const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   storageKey: "ogcInnovationBusinessCases.v1",
 
+  // fixed string
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
 
+  // you don't have list flow yet, so leave blank for now
   listFlowUrl: "",
+
+  // your existing save flow URL
   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
   fieldMap: {
@@ -560,7 +564,7 @@ const CONFIG = {
 // ── State ─────────────────────────────────────────────────────────────────────
 const state = {
   records: [],
-  mode: "connecting",
+  mode: "save-flow-only",
   siteUrl: CONFIG.sharePointSiteUrl,
   search: "",
   statusFilter: "All",
@@ -576,7 +580,7 @@ document.addEventListener("DOMContentLoaded", init);
 async function init() {
   cacheElements();
   bindEvents();
-  await loadRecords();
+  loadLocalRecords();
   render();
 }
 
@@ -609,9 +613,10 @@ function bindEvents() {
     renderTable();
   });
 
-  els.refreshButton.addEventListener("click", async () => {
-    await loadRecords(true);
+  els.refreshButton.addEventListener("click", () => {
+    loadLocalRecords();
     render();
+    showToast("Showing local view. Save goes to SharePoint via Power Automate.");
   });
 
   document.addEventListener("keydown", e => {
@@ -621,27 +626,8 @@ function bindEvents() {
   });
 }
 
-// ── Data ──────────────────────────────────────────────────────────────────────
-async function loadRecords(manual = false) {
-  setBusy(true);
-  try {
-    if (CONFIG.listFlowUrl && CONFIG.listFlowUrl !== "PASTE_LIST_FLOW_URL_HERE") {
-      state.records = await apiStore.fetchItems();
-      state.mode = "flow";
-      if (manual) showToast("✓ Data refreshed.");
-    } else {
-      state.records = localStore.fetchItems();
-      state.mode = "local-warning";
-      if (manual) showToast("⚠ List flow URL not configured. Showing local data.");
-    }
-  } catch (err) {
-    console.error("Fetch failed:", err);
-    state.records = localStore.fetchItems();
-    state.mode = "local-warning";
-    showToast("⚠ Could not reach flow. Showing local data.");
-  } finally {
-    setBusy(false);
-  }
+function loadLocalRecords() {
+  state.records = localStore.fetchItems();
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -653,14 +639,8 @@ function render() {
 
 function renderBadge() {
   const b = els.connectionBadge;
-
-  if (state.mode === "flow") {
-    b.textContent = "Power Automate connected";
-    b.classList.remove("warning");
-  } else {
-    b.textContent = "⚠ Flow unavailable – local mode";
-    b.classList.add("warning");
-  }
+  b.textContent = "Save flow connected";
+  b.classList.remove("warning");
 }
 
 function renderSummaries() {
@@ -713,14 +693,12 @@ function renderTable() {
 
 function filtered() {
   const q = state.search;
-
   return [...state.records]
     .filter(r => state.statusFilter === "All" || r.status === state.statusFilter)
-    .filter(r =>
-      !q ||
-      [r.ideaName, r.owner, r.department, r.status, r.problemStatement, r.valueProposition, r.proposedSolution]
-        .some(v => String(v || "").toLowerCase().includes(q))
-    )
+    .filter(r => !q || [
+      r.ideaName, r.owner, r.department, r.status,
+      r.problemStatement, r.valueProposition, r.proposedSolution
+    ].some(v => String(v || "").toLowerCase().includes(q)))
     .sort((a, b) => new Date(b.modified || b.created || 0) - new Date(a.modified || a.created || 0));
 }
 
@@ -765,30 +743,45 @@ async function saveCurrentCase(e) {
 
   setBusy(true);
   try {
-    let saved;
+    const saved = await saveViaFlow(record);
 
-    if (CONFIG.saveFlowUrl && CONFIG.saveFlowUrl !== "PASTE_SAVE_FLOW_URL_HERE") {
-      saved = await apiStore.saveItem(record);
-      state.mode = "flow";
-      showToast("✓ Saved via Power Automate.");
-    } else {
-      saved = record.id
-        ? localStore.updateItem(record)
-        : localStore.createItem(record);
-      state.mode = "local-warning";
-      showToast("Saved locally (Flow URL not configured).");
-    }
+    // keep local UI in sync immediately
+    const localSaved = record.id
+      ? localStore.updateItem({ ...record, id: saved.id || record.id })
+      : localStore.createItem({ ...record, id: saved.id || `flow-${Date.now()}` });
 
-    upsert(saved);
+    upsert(localSaved);
     closeDrawer();
     els.caseForm.reset();
     render();
+    showToast("✓ Saved to SharePoint list.");
   } catch (err) {
     console.error("Save failed:", err);
     showToast(`Save failed: ${err.message}`);
   } finally {
     setBusy(false);
   }
+}
+
+async function saveViaFlow(record) {
+  const res = await fetch(CONFIG.saveFlowUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(record)
+  });
+
+  if (!res.ok) {
+    throw new Error(`Flow save failed: HTTP ${res.status}`);
+  }
+
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+
+  return data;
 }
 
 function formToRecord(fd) {
@@ -809,43 +802,39 @@ function formToRecord(fd) {
 
 function upsert(record) {
   const i = state.records.findIndex(x => String(x.id) === String(record.id));
-  if (i >= 0) {
-    state.records.splice(i, 1, record);
-  } else {
-    state.records.unshift(record);
-  }
+  i >= 0 ? state.records.splice(i, 1, record) : state.records.unshift(record);
 }
 
 // ── CSV export ────────────────────────────────────────────────────────────────
 function exportCsv() {
   const cols = [
-    ["ideaName", "Business case idea"], ["status", "Status"], ["owner", "Owner"],
-    ["department", "Department or GP"], ["problemStatement", "Problem statement"],
-    ["scaleBusinessImpact", "Scale and business impact"], ["currentWorkarounds", "Current workarounds failing"],
-    ["proposedSolution", "Innovation approach"], ["mvpScope", "MVP scope"],
-    ["enabler", "Technology or process enabler"], ["unfairAdvantage", "Unfair advantage"],
-    ["valueProposition", "Value proposition"], ["costSavings", "Cost savings"],
-    ["efficiencyGain", "Efficiency gain %"], ["paybackMonths", "Payback period months"],
-    ["activeUsers", "Active users"], ["adoptionRate", "Adoption rate %"],
-    ["revenueImpact", "Revenue impact"], ["cycleTimeReduction", "Cycle time reduction %"],
-    ["productivityUplift", "Productivity uplift %"], ["scheduleImpact", "Schedule impact"],
-    ["goToMarketChannels", "Digital and direct sales channel"],
-    ["changeManagement", "Change management and training"], ["rolloutPlan", "Phased rollout plan"],
-    ["toolsPlatformCharges", "Tools and platform charges"], ["licenseCost", "License cost"],
-    ["developmentCost", "Development cost"], ["supportMaintenanceCost", "Support and maintenance"],
-    ["recurringCostAvoidance", "Recurring cost avoidance"], ["marginImprovement", "Margin improvement %"],
-    ["scalabilityNotes", "Scalable to all GPs"], ["modified", "Updated"]
+    ["ideaName","Business case idea"],["status","Status"],["owner","Owner"],
+    ["department","Department or GP"],["problemStatement","Problem statement"],
+    ["scaleBusinessImpact","Scale and business impact"],["currentWorkarounds","Current workarounds failing"],
+    ["proposedSolution","Innovation approach"],["mvpScope","MVP scope"],
+    ["enabler","Technology or process enabler"],["unfairAdvantage","Unfair advantage"],
+    ["valueProposition","Value proposition"],["costSavings","Cost savings"],
+    ["efficiencyGain","Efficiency gain %"],["paybackMonths","Payback period months"],
+    ["activeUsers","Active users"],["adoptionRate","Adoption rate %"],
+    ["revenueImpact","Revenue impact"],["cycleTimeReduction","Cycle time reduction %"],
+    ["productivityUplift","Productivity uplift %"],["scheduleImpact","Schedule impact"],
+    ["goToMarketChannels","Digital and direct sales channel"],
+    ["changeManagement","Change management and training"],["rolloutPlan","Phased rollout plan"],
+    ["toolsPlatformCharges","Tools and platform charges"],["licenseCost","License cost"],
+    ["developmentCost","Development cost"],["supportMaintenanceCost","Support and maintenance"],
+    ["recurringCostAvoidance","Recurring cost avoidance"],["marginImprovement","Margin improvement %"],
+    ["scalabilityNotes","Scalable to all GPs"],["modified","Updated"]
   ];
 
   const rows = filtered();
   const csv = [
-    cols.map(([, l]) => csvQ(l)).join(","),
+    cols.map(([,l]) => csvQ(l)).join(","),
     ...rows.map(r => cols.map(([k]) => csvQ(r[k])).join(","))
   ].join("\r\n");
 
   const a = Object.assign(document.createElement("a"), {
-    href: URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })),
-    download: `innovation-cases-${new Date().toISOString().slice(0, 10)}.csv`
+    href: URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" })),
+    download: `innovation-cases-${new Date().toISOString().slice(0,10)}.csv`
   });
 
   document.body.append(a);
@@ -856,28 +845,17 @@ function exportCsv() {
 // ── Local storage fallback ────────────────────────────────────────────────────
 const localStore = {
   all() {
-    try {
-      return JSON.parse(localStorage.getItem(CONFIG.storageKey) || "[]");
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem(CONFIG.storageKey) || "[]"); }
+    catch { return []; }
   },
-
-  save(r) {
-    localStorage.setItem(CONFIG.storageKey, JSON.stringify(r));
-  },
-
-  fetchItems() {
-    return this.all();
-  },
-
+  save(r) { localStorage.setItem(CONFIG.storageKey, JSON.stringify(r)); },
+  fetchItems() { return this.all(); },
   createItem(rec) {
     const now = new Date().toISOString();
-    const saved = { ...rec, id: `local-${Date.now()}`, created: now, modified: now };
+    const saved = { ...rec, id: rec.id || `local-${Date.now()}`, created: now, modified: now };
     this.save([saved, ...this.all()]);
     return saved;
   },
-
   updateItem(rec) {
     const now = new Date().toISOString();
     const recs = this.all();
@@ -890,105 +868,6 @@ const localStore = {
   }
 };
 
-// ── Power Automate API Store ──────────────────────────────────────────────────
-const apiStore = {
-  async fetchItems() {
-    const res = await fetch(CONFIG.listFlowUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({})
-    });
-
-    if (!res.ok) {
-      throw new Error(`List flow failed: HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    const rows = Array.isArray(data) ? data : (data.items || data.value || []);
-
-    return rows.map(normalizeRecordFromApi);
-  },
-
-  async saveItem(record) {
-    const res = await fetch(CONFIG.saveFlowUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(record)
-    });
-
-    if (!res.ok) {
-      throw new Error(`Save flow failed: HTTP ${res.status}`);
-    }
-
-    let data = {};
-    try {
-      data = await res.json();
-    } catch {
-      data = {};
-    }
-
-    // Flow can return saved record; if not, fallback to local merged version
-    const saved = normalizeRecordFromApi({ ...record, ...data });
-
-    if (!saved.id) {
-      saved.id = record.id || `flow-${Date.now()}`;
-    }
-    if (!saved.created) {
-      saved.created = record.created || new Date().toISOString();
-    }
-    if (!saved.modified) {
-      saved.modified = new Date().toISOString();
-    }
-
-    return saved;
-  }
-};
-
-// ── API normalization helpers ─────────────────────────────────────────────────
-function normalizeRecordFromApi(item) {
-  return {
-    id: item.id ?? item.Id ?? item.ID ?? "",
-    ideaName: item.ideaName ?? item.Title ?? "",
-    owner: item.owner ?? item.field_1 ?? "",
-    department: item.department ?? item.field_2 ?? "",
-    status: item.status ?? item.field_3 ?? "Intake",
-    problemStatement: item.problemStatement ?? item.field_4 ?? "",
-    scaleBusinessImpact: item.scaleBusinessImpact ?? item.field_5 ?? "",
-    currentWorkarounds: item.currentWorkarounds ?? item.field_6 ?? "",
-    proposedSolution: item.proposedSolution ?? item.field_7 ?? "",
-    mvpScope: item.mvpScope ?? item.field_8 ?? "",
-    enabler: item.enabler ?? item.field_9 ?? "",
-    unfairAdvantage: item.unfairAdvantage ?? item.field_10 ?? "",
-    valueProposition: item.valueProposition ?? item.field_11 ?? "",
-    costSavings: numOrNull(item.costSavings ?? item.field_12),
-    efficiencyGain: numOrNull(item.efficiencyGain ?? item.field_13),
-    paybackMonths: numOrNull(item.paybackMonths ?? item.field_14),
-    activeUsers: numOrNull(item.activeUsers ?? item.field_15),
-    adoptionRate: numOrNull(item.adoptionRate ?? item.field_16),
-    revenueImpact: numOrNull(item.revenueImpact ?? item.field_17),
-    cycleTimeReduction: numOrNull(item.cycleTimeReduction ?? item.field_18),
-    productivityUplift: numOrNull(item.productivityUplift ?? item.field_19),
-    scheduleImpact: item.scheduleImpact ?? item.field_20 ?? "",
-    goToMarketChannels: item.goToMarketChannels ?? item.field_21 ?? "",
-    changeManagement: item.changeManagement ?? item.field_22 ?? "",
-    rolloutPlan: item.rolloutPlan ?? item.field_23 ?? "",
-    toolsPlatformCharges: numOrNull(item.toolsPlatformCharges ?? item.field_24),
-    licenseCost: numOrNull(item.licenseCost ?? item.field_25),
-    developmentCost: numOrNull(item.developmentCost ?? item.field_26),
-    supportMaintenanceCost: numOrNull(item.supportMaintenanceCost ?? item.field_27),
-    recurringCostAvoidance: numOrNull(item.recurringCostAvoidance ?? item.field_28),
-    marginImprovement: numOrNull(item.marginImprovement ?? item.field_29),
-    scalabilityNotes: item.scalabilityNotes ?? item.field_30 ?? "",
-    created: item.created ?? item.Created ?? "",
-    modified: item.modified ?? item.Modified ?? ""
-  };
-}
-
-function numOrNull(v) {
-  return v === "" || v == null || Number.isNaN(Number(v)) ? null : Number(v);
-}
-
-// ── UI helpers ────────────────────────────────────────────────────────────────
 function setBusy(v) {
   state.busy = v;
   document.body.classList.toggle("is-busy", v);
@@ -1001,55 +880,49 @@ function showToast(msg) {
   state.toastTimer = setTimeout(() => els.toast.classList.remove("show"), 3800);
 }
 
-// ── Math helpers ──────────────────────────────────────────────────────────────
-const sum = (recs, k) => recs.reduce((t, r) => t + (Number(r[k]) || 0), 0);
-const nums = (recs, k) => recs.map(r => Number(r[k])).filter(v => isFinite(v) && v > 0);
-const avg = vals => vals.length ? vals.reduce((t, v) => t + v, 0) / vals.length : 0;
+const sum = (recs,k) => recs.reduce((t,r) => t + (Number(r[k]) || 0), 0);
+const nums = (recs,k) => recs.map(r => Number(r[k])).filter(v => isFinite(v) && v > 0);
+const avg = vals => vals.length ? vals.reduce((t,v) => t + v, 0) / vals.length : 0;
 
-// ── Formatters ────────────────────────────────────────────────────────────────
 function fmt$(v) {
   const n = Number(v) || 0;
   return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
+    style:"currency",
+    currency:"USD",
     maximumFractionDigits: n >= 1000 ? 0 : 2
   }).format(n);
 }
 
-const fmtPct = v => (v === "" || v == null) ? "" : `${fmtN(Number(v), 1)}%`;
-const fmtMo = v => (v === "" || v == null) ? "" : `${fmtN(Number(v), 0)} mo`;
+const fmtPct = v => (v === "" || v == null) ? "" : `${fmtN(Number(v),1)}%`;
+const fmtMo  = v => (v === "" || v == null) ? "" : `${fmtN(Number(v),0)} mo`;
 
 function fmtN(v, d = 0) {
   const n = Number(v) || 0;
   return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: d,
-    minimumFractionDigits: d > 0 && Math.abs(n % 1) > 0 ? d : 0
+    maximumFractionDigits:d,
+    minimumFractionDigits:d > 0 && Math.abs(n % 1) > 0 ? d : 0
   }).format(n);
 }
 
 function fmtDate(v) {
   if (!v) return "";
   const d = new Date(v);
-  return isNaN(d)
-    ? ""
-    : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(d);
+  return isNaN(d) ? "" : new Intl.DateTimeFormat("en-US", {
+    month:"short", day:"numeric", year:"numeric"
+  }).format(d);
 }
 
-// ── Escape helpers ────────────────────────────────────────────────────────────
 function esc(v) {
   return String(v ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#39;");
 }
 
-function escAttr(v) {
-  return esc(v).replace(/`/g, "&#96;");
-}
-
+function escAttr(v) { return esc(v).replace(/`/g,"&#96;"); }
 function csvQ(v) {
   const t = v == null ? "" : String(v);
-  return `"${t.replace(/"/g, '""')}"`;
+  return `"${t.replace(/"/g,'""')}"`;
 }
