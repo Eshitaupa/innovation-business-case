@@ -6,7 +6,7 @@ const CONFIG = {
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
 
   listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
-                
+
   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
   fieldMap: {
@@ -59,10 +59,6 @@ const CONFIG = {
 
 const state = {
   records: [],
-  choices: {
-    status: [],
-    department: []
-  },
   mode: "save-flow-only",
   siteUrl: CONFIG.sharePointSiteUrl,
   search: "",
@@ -70,7 +66,6 @@ const state = {
   busy: false,
   toastTimer: 0
 };
-
 
 const els = {};
 
@@ -80,7 +75,6 @@ async function init() {
   cacheElements();
   bindEvents();
   await loadRecords();
-  populateDropdowns(); 
   render();
 }
 async function loadRecords() {
@@ -96,18 +90,13 @@ async function loadRecords() {
 
     const data = await res.json();
     const rows = Array.isArray(data) ? data : (data.value || data.items || []);
-    
-state.choices = {
-  status: data.statusChoices || [],
-  department: data.departmentChoices || []
-};
 
     state.records = rows.map(item => ({
       id: item.Id || item.ID || "",
       ideaName: item.Title || "",
       owner: item.field_1 || "",
       department: choiceText(item.field_2),
-      status: choiceText(item.field_3) ||"",
+      status: choiceText(item.field_3) || "Intake",
       problemStatement: item.field_4 || "",
       scaleBusinessImpact: item.field_5 || "",
       currentWorkarounds: item.field_6 || "",
@@ -155,27 +144,7 @@ document.addEventListener("wheel", function (e) {
   }
 }, { passive: false });
 
-function populateDropdowns() {
-  const statusSelect = document.querySelector('[name="status"]');
-  const deptSelect = document.querySelector('[name="department"]');
 
-  statusSelect.innerHTML = "";
-  deptSelect.innerHTML = "";
-
-  state.choices.status.forEach(val => {
-    const opt = document.createElement("option");
-    opt.value = val;
-    opt.textContent = val;
-    statusSelect.appendChild(opt);
-  });
-
-  state.choices.department.forEach(val => {
-    const opt = document.createElement("option");
-    opt.value = val;
-    opt.textContent = val;
-    deptSelect.appendChild(opt);
-  });
-}
 // ---------------------------------------------------------------------------
 // ELEMENT CACHE & EVENTS
 // ---------------------------------------------------------------------------
@@ -210,7 +179,6 @@ function bindEvents() {
 
   els.refreshButton.addEventListener("click", async () => {
     await loadRecords();
-    populateDropdowns()
     render();
   });
 
