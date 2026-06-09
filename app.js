@@ -851,8 +851,6 @@ async function saveCurrentCase(e) {
 }
 
 async function saveViaFlow(record) {
-  // Build the payload with SharePoint field names so the flow can hand them
-  // directly to the SharePoint connector without extra mapping steps.
   const payload = buildSharePointPayload(record);
 
   const res = await fetch(CONFIG.saveFlowUrl, {
@@ -861,13 +859,22 @@ async function saveViaFlow(record) {
     body: JSON.stringify(payload)
   });
 
-  if (!res.ok) {
-    throw new Error(`Flow save failed: HTTP ${res.status}`);
+  let text = "";
+  try {
+    text = await res.text();
+  } catch {
+    text = "";
   }
 
-  let data = {};
-  try { data = await res.json(); } catch { /* empty body is fine */ }
-  return data;
+  if (!res.ok) {
+    throw new Error(`Flow save failed: HTTP ${res.status}${text ? " - " + text : ""}`);
+  }
+
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -882,22 +889,30 @@ async function saveViaFlow(record) {
 function buildSharePointPayload(record) {
   const payload = {
     operation: record.id ? "update" : "create",
-    id:        record.id ? String(record.id) : ""
+    id: record.id ? String(record.id) : ""
   };
 
-  // Walk every field in the map and emit the SP field name as key
   Object.entries(CONFIG.fieldMap).forEach(([jsKey, spField]) => {
-    if (["created", "modified", "id"].includes(jsKey)) return; // SP manages these
+    if (["created", "modified", "id"].includes(jsKey)) return;
+
     const val = record[jsKey];
+
+    // Skip empty values completely so the HTTP trigger schema doesn't reject nulls
+    if (val === "" || val === null || val === undefined) return;
+
     if (CONFIG.numberFields.has(jsKey)) {
-      payload[spField] = (val === "" || val == null) ? null : Number(val);
+      const num = Number(val);
+      if (!Number.isNaN(num)) {
+        payload[spField] = num;
+      }
     } else {
-      payload[spField] = val == null ? "" : String(val);
+      payload[spField] = String(val).trim();
     }
   });
 
   return payload;
 }
+
 
 // ---------------------------------------------------------------------------
 // FORM → RECORD (JS model, camelCase keys)
