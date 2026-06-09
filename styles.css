@@ -179,7 +179,10 @@ border-color: var(--accent);
   gap: 12px;
   margin-bottom: 16px;
 }
-
+select {
+  min-height: 40px;
+  font-size: 14px;
+}
 .metric-card {
   min-height: 84px;
   border: 1px solid var(--line);
@@ -541,8 +544,8 @@ textarea:focus {
   pointer-events: none;
 }
 input[type="number"] {
-  -webkit-appearance: textfield; /* IMPORTANT */
-  appearance: textfield;
+  appearance: textfield;              
+  -webkit-appearance: textfield;     
 }
 
 input[type="number"]::-webkit-outer-spin-button,
@@ -551,9 +554,6 @@ input[type="number"]::-webkit-inner-spin-button {
   margin: 0;
 }
 
-input[type="number"] {
-  -moz-appearance: textfield;
-}
 
 @media (max-width: 920px) {
   .app-shell {
