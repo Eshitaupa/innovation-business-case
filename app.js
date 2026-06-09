@@ -558,6 +558,7 @@ const CONFIG = {
   ])
 };
 
+
 const state = {
   records: [],
   mode: "save-flow-only",
@@ -578,7 +579,6 @@ async function init() {
   await loadRecords();
   render();
 }
-
 async function loadRecords() {
   setBusy(true);
   try {
@@ -712,9 +712,7 @@ function numOrZero(v) {
 function choiceText(v) {
   if (v == null) return "";
   if (typeof v === "string") return v;
-  if (typeof v === "object") {
-    return v.Value || v.value || v.Label || v.label || "";
-  }
+  if (typeof v === "object") return v.Value || v.value || v.Label || v.label || "";
   return String(v);
 }
 function renderSummaries() {
@@ -827,27 +825,14 @@ async function saveCurrentCase(e) {
 
   setBusy(true);
   try {
-    const isUpdate = !!(record.id);
-    const saved = await saveViaFlow(record);
+    await saveViaFlow(record);
 
-    // Resolve the SharePoint ID returned by the flow (create) or keep existing (update)
-    const spId = saved.id || saved.Id || record.id || `temp-${Date.now()}`;
-    const now   = new Date().toISOString();
-
-    const merged = {
-      ...record,
-      id:       spId,
-      modified: now,
-      created:  isUpdate
-        ? (state.records.find(x => String(x.id) === String(record.id))?.created || now)
-        : now
-    };
-
-    upsert(merged);
+    await loadRecords();   // <- reload from SharePoint after save
     closeDrawer();
     els.caseForm.reset();
     render();
-    showToast(isUpdate ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
+
+    showToast(record.id ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
   } catch (err) {
     console.error("Save failed:", err);
     showToast(`Save failed: ${err.message}`);
@@ -901,14 +886,11 @@ function buildSharePointPayload(record) {
     if (["created", "modified", "id"].includes(jsKey)) return;
 
     const val = record[jsKey];
-
     if (val === "" || val === null || val === undefined) return;
 
     if (CONFIG.numberFields.has(jsKey)) {
       const num = Number(val);
-      if (!Number.isNaN(num)) {
-        payload[spField] = num;
-      }
+      if (!Number.isNaN(num)) payload[spField] = num;
     } else {
       payload[spField] = String(val).trim();
     }
@@ -916,8 +898,6 @@ function buildSharePointPayload(record) {
 
   return payload;
 }
-
-
 
 // ---------------------------------------------------------------------------
 // FORM → RECORD (JS model, camelCase keys)
