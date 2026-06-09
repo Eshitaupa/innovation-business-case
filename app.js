@@ -501,7 +501,6 @@
 // }
 // function escAttr(v) { return esc(v).replace(/`/g,"&#96;"); }
 // function csvQ(v) { const t=v==null?"":String(v); return `"${t.replace(/"/g,'""')}"`; }
-
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   storageKey: "ogcInnovationBusinessCases.v1",
@@ -558,7 +557,6 @@ const CONFIG = {
     "scalabilityNotes"
   ])
 };
-
 
 const state = {
   records: [],
