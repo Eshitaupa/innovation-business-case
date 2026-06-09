@@ -138,6 +138,11 @@ async function loadRecords() {
     setBusy(false);
   }
 }
+document.addEventListener("wheel", function (e) {
+  if (document.activeElement.type === "number") {
+    e.preventDefault();
+  }
+}, { passive: false });
 
 
 // ---------------------------------------------------------------------------
