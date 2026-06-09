@@ -95,7 +95,7 @@
           <input id="searchInput" type="search" autocomplete="off" placeholder="Search cases">
         </label>
 
-        <!-- <label class="select-field">
+        <label class="select-field">
           <span>Status</span>
           <select id="statusFilter">
             <option value="All">All</option>
@@ -105,12 +105,7 @@
             <option value="Scaling">Scaling</option>
             <option value="On hold">On hold</option>
           </select>
-        </label> -->
-        <label>
-  <span>Status</span>
-  <select name="status"></select>
-</label>
-
+        </label>
       </section>
 
       <section class="table-panel" aria-label="Innovation business cases">
@@ -171,20 +166,18 @@
 
             <label>
               <span>Department or GP</span>
-              <select name="department"></select>
+              <input name="department" type="text" maxlength="80">
             </label>
 
             <label>
               <span>Status</span>
-                <!-- <option value="Intake">Intake</option>
+              <select name="status">
+                <option value="Intake">Intake</option>
                 <option value="Reviewing">Reviewing</option>
                 <option value="MVP">MVP</option>
                 <option value="Scaling">Scaling</option>
-                <option value="On hold">On hold</option> -->
-                
-<select name="status"></select>
-
-          
+                <option value="On hold">On hold</option>
+              </select>
             </label>
           </div>
         </section>
