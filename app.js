@@ -59,6 +59,10 @@ const CONFIG = {
 
 const state = {
   records: [],
+  choices: {
+    status: [],
+    department: []
+  },
   mode: "save-flow-only",
   siteUrl: CONFIG.sharePointSiteUrl,
   search: "",
@@ -66,6 +70,7 @@ const state = {
   busy: false,
   toastTimer: 0
 };
+
 
 const els = {};
 
@@ -75,6 +80,7 @@ async function init() {
   cacheElements();
   bindEvents();
   await loadRecords();
+  populateDropdowns(); 
   render();
 }
 async function loadRecords() {
