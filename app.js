@@ -231,26 +231,7 @@ function renderSummaries() {
   els.summaryEfficiency.textContent = `${fmtN(avg(nums(f, "efficiencyGain")), 1)}%`;
   els.summaryPayback.textContent = `${fmtN(avg(nums(f, "paybackMonths")), 0)} mo`;
 }
-async function fetchFieldChoices(internalName) {
-  const url =
-    `${CONFIG.sharePointSiteUrl}/_api/web/lists/getbytitle('${CONFIG.listTitle}')/fields/getbyinternalnameortitle('${internalName}')?$select=Choices`;
 
-  console.log("Calling:", url);
-
-  const res = await fetch(url, {
-    headers: {
-      Accept: "application/json;odata=nometadata"
-    },
-    credentials: "include"
-  });
-
-  console.log("Status:", res.status);
-
-  const text = await res.text();
-  console.log("Response:", text);
-
-  return text;
-}
 function populateDropdowns() {
 
   const deptSelect =
@@ -290,27 +271,42 @@ function populateDropdowns() {
 }   
 async function loadChoicesFromSharePoint() {
   console.log("Loading SharePoint choices...");
-
   try {
+    // Re-use the existing list flow — choices come from the live data
+    const res = await fetch(CONFIG.listFlowUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
 
-    const [deptField, statusField] = await Promise.all([
-      fetchFieldChoices("field_2"),
-      fetchFieldChoices("field_3")
-    ]);
+    if (!res.ok) throw new Error("List flow failed");
 
-    console.log("Department:", deptField);
-    console.log("Status:", statusField);
+    const data = await res.json();
+    const rows = Array.isArray(data) ? data : (data.value || data.items || []);
+
+    // Extract unique non-empty values from field_2 (dept) and field_3 (status)
+    const unique = (field) => [
+      ...new Set(
+        rows
+          .map(r => choiceText(r[field]))
+          .filter(Boolean)
+      )
+    ].sort();
 
     state.choices = {
-      department: deptField.Choices || [],
-      status: statusField.Choices || []
+      department: unique("field_2"),
+      status: unique("field_3")
     };
 
   } catch (err) {
     console.error("Choice load failed", err);
+    // Fallback hardcoded choices so dropdowns aren't empty
+    state.choices = {
+      department: ["OGC QA", "OGC Engineering", "OGC Operations"],
+      status: ["Intake", "Reviewing", "MVP", "Scaling", "On hold"]
+    };
   }
 }
-
 function renderTable() {
   renderSummaries();
   const rows = filtered();
