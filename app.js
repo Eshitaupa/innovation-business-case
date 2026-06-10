@@ -59,6 +59,10 @@ const CONFIG = {
 
 const state = {
   records: [],
+  choices: {
+    department: [],
+    status: []
+  },
   mode: "save-flow-only",
   siteUrl: CONFIG.sharePointSiteUrl,
   search: "",
@@ -258,34 +262,29 @@ function populateDropdowns() {
   if (deptSelect) deptSelect.innerHTML = "";
   if (formStatus) formStatus.innerHTML = "";
   if (statusFilter) {
-    statusFilter.innerHTML =
-      '<option value="All">All</option>';
+    statusFilter.innerHTML = '<option value="All">All</option>';
   }
 
   state.choices.department.forEach(choice => {
-
     const opt = document.createElement("option");
     opt.value = choice;
     opt.textContent = choice;
-
     deptSelect?.appendChild(opt);
   });
 
   state.choices.status.forEach(choice => {
-
     const opt1 = document.createElement("option");
     opt1.value = choice;
     opt1.textContent = choice;
-
     formStatus?.appendChild(opt1);
 
     const opt2 = document.createElement("option");
     opt2.value = choice;
     opt2.textContent = choice;
-
     statusFilter?.appendChild(opt2);
   });
 
+}   
 
 async function loadChoicesFromSharePoint() {
   try {
