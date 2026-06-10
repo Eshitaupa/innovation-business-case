@@ -232,23 +232,18 @@ function renderSummaries() {
   els.summaryPayback.textContent = `${fmtN(avg(nums(f, "paybackMonths")), 0)} mo`;
 }
 async function fetchFieldChoices(internalName) {
-
   const url =
-    `${CONFIG.sharePointSiteUrl}/_api/web/lists/getbytitle('${CONFIG.listTitle}')/fields/getbyinternalnameortitle('${internalName}')?$select=Choices`;
-
-  console.log("Calling:", url);
+    `${CONFIG.sharePointSiteUrl}/_api/web/currentuser`;
 
   const res = await fetch(url, {
-    method: "GET",
     headers: {
-      "Accept": "application/json;odata=nometadata"
+      Accept: "application/json;odata=nometadata"
     },
     credentials: "include"
   });
 
-  console.log("Response:", internalName, res.status);
-
-  return res.json();
+  console.log("status", res.status);
+  console.log(await res.text());
 }
 function populateDropdowns() {
 
