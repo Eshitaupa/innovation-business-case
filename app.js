@@ -232,8 +232,12 @@ function renderSummaries() {
   els.summaryPayback.textContent = `${fmtN(avg(nums(f, "paybackMonths")), 0)} mo`;
 }
 async function fetchFieldChoices(internalName) {
-const url =
-`${CONFIG.sharePointSiteUrl}/_api/web/lists/getbytitle('${CONFIG.listTitle}')/fields/getbyinternalnameortitle('${internalName}')?$select=Choices`;
+
+  const url =
+    `${CONFIG.sharePointSiteUrl}/_api/web/lists/getbytitle('${CONFIG.listTitle}')/fields/getbyinternalnameortitle('${internalName}')?$select=Choices`;
+
+  console.log("Calling:", url);
+
   const res = await fetch(url, {
     method: "GET",
     headers: {
@@ -242,9 +246,7 @@ const url =
     credentials: "include"
   });
 
-  if (!res.ok) {
-    throw new Error(`Failed to fetch choices for ${internalName}: HTTP ${res.status}`);
-  }
+  console.log("Response:", internalName, res.status);
 
   return res.json();
 }
@@ -285,14 +287,18 @@ function populateDropdowns() {
   });
 
 }   
-
 async function loadChoicesFromSharePoint() {
+  console.log("Loading SharePoint choices...");
+
   try {
 
     const [deptField, statusField] = await Promise.all([
       fetchFieldChoices("field_2"),
       fetchFieldChoices("field_3")
     ]);
+
+    console.log("Department:", deptField);
+    console.log("Status:", statusField);
 
     state.choices = {
       department: deptField.Choices || [],
@@ -301,11 +307,6 @@ async function loadChoicesFromSharePoint() {
 
   } catch (err) {
     console.error("Choice load failed", err);
-
-    state.choices = {
-      department: [],
-      status: []
-    };
   }
 }
 
