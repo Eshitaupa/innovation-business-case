@@ -245,7 +245,8 @@ async function fetchFieldChoices(internalName) {
   return res.json();
 }
 function populateDropdowns() {
-  const formStatus = documentSelect = document.querySelector('select[name="department"]');  const formStatus = document.querySelector('select[name="status"]');
+  const formStatus = document.querySelector('[name="status"]');
+  const deptSelect = document.querySelector('[name="department"]');
   const statusFilter = document.getElementById("statusFilter");
 
   if (formStatus) formStatus.innerHTML = "";
@@ -253,19 +254,24 @@ function populateDropdowns() {
   if (statusFilter) statusFilter.innerHTML = '<option value="All">All</option>';
 
   state.choices.status.forEach(val => {
-    if (formStatus) {
-      const opt = document.createElement("option");
-      opt.value = val;
-      opt.textContent = val;
-      formStatus.appendChild(opt);
-    }
-    if (statusFilter) {
-      const opt = document.createElement("option");
-      opt.value = val;
-      opt.textContent = val;
-      statusFilter.appendChild(opt);
-    }
+    const option1 = document.createElement("option");
+    option1.value = val;
+    option1.textContent = val;
+    formStatus.appendChild(option1);
+
+    const option2 = document.createElement("option");
+    option2.value = val;
+    option2.textContent = val;
+    statusFilter.appendChild(option2);
   });
+
+  state.choices.department.forEach(val => {
+    const option = document.createElement("option");
+    option.value = val;
+    option.textContent = val;
+    deptSelect.appendChild(option);
+  });
+}
 
   state.choices.department.forEach(val => {
     if (deptSelect) {
@@ -283,10 +289,10 @@ async function loadChoicesFromSharePoint() {
     fetchFieldChoices("field_3")
   ]);
 
-  state.choices = {
-    department: deptField.Choices || [],
-    status: statusField.Choices || []
-  };
+state.choices = {
+  status: data.statusChoices || [],
+  department: data.departmentChoices || []
+};
 }
 
 function renderTable() {
