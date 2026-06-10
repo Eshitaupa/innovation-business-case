@@ -233,7 +233,9 @@ function renderSummaries() {
 }
 async function fetchFieldChoices(internalName) {
   const url =
-    `${CONFIG.sharePointSiteUrl}/_api/web/currentuser`;
+    `${CONFIG.sharePointSiteUrl}/_api/web/lists/getbytitle('${CONFIG.listTitle}')/fields/getbyinternalnameortitle('${internalName}')?$select=Choices`;
+
+  console.log("Calling:", url);
 
   const res = await fetch(url, {
     headers: {
@@ -242,8 +244,12 @@ async function fetchFieldChoices(internalName) {
     credentials: "include"
   });
 
-  console.log("status", res.status);
-  console.log(await res.text());
+  console.log("Status:", res.status);
+
+  const text = await res.text();
+  console.log("Response:", text);
+
+  return text;
 }
 function populateDropdowns() {
 
