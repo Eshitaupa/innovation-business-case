@@ -716,6 +716,10 @@ async function loadFromFlow() {
 
     const data = await res.json();
     console.log("Flow response:", data);
+    console.log("Status choices:", data?.choices?.status);
+console.log("Department choices:", data?.choices?.department);
+console.log("Is status array?", Array.isArray(data?.choices?.status));
+console.log("Is dept array?", Array.isArray(data?.choices?.department));
 
     // ── Extract choices ──────────────────────────────────────────────────
     // Preferred: flow returns { items: [...], choices: { status: [...], department: [...] } }
