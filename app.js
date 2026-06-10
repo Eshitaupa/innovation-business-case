@@ -228,8 +228,8 @@ function renderSummaries() {
   els.summaryPayback.textContent = `${fmtN(avg(nums(f, "paybackMonths")), 0)} mo`;
 }
 async function fetchFieldChoices(internalName) {
-  const url = `${CONFIG.sharePointSiteUrl}/_api/web/lists/getbytitle('${encodeURIComponent(CONFIG.listTitle)}')/fields/getbyinternalnameortitle('${internalName}')?$select=Choices,Title,InternalName`;
-
+const url =
+`${CONFIG.sharePointSiteUrl}/_api/web/lists/getbytitle('${CONFIG.listTitle}')/fields/getbyinternalnameortitle('${internalName}')?$select=Choices`;
   const res = await fetch(url, {
     method: "GET",
     headers: {
@@ -245,54 +245,69 @@ async function fetchFieldChoices(internalName) {
   return res.json();
 }
 function populateDropdowns() {
-  const formStatus = document.querySelector('[name="status"]');
-  const deptSelect = document.querySelector('[name="department"]');
-  const statusFilter = document.getElementById("statusFilter");
 
-  if (formStatus) formStatus.innerHTML = "";
+  const deptSelect =
+    document.querySelector('select[name="department"]');
+
+  const formStatus =
+    document.querySelector('select[name="status"]');
+
+  const statusFilter =
+    document.getElementById("statusFilter");
+
   if (deptSelect) deptSelect.innerHTML = "";
-  if (statusFilter) statusFilter.innerHTML = '<option value="All">All</option>';
+  if (formStatus) formStatus.innerHTML = "";
+  if (statusFilter) {
+    statusFilter.innerHTML =
+      '<option value="All">All</option>';
+  }
 
-  state.choices.status.forEach(val => {
-    const option1 = document.createElement("option");
-    option1.value = val;
-    option1.textContent = val;
-    formStatus.appendChild(option1);
+  state.choices.department.forEach(choice => {
 
-    const option2 = document.createElement("option");
-    option2.value = val;
-    option2.textContent = val;
-    statusFilter.appendChild(option2);
+    const opt = document.createElement("option");
+    opt.value = choice;
+    opt.textContent = choice;
+
+    deptSelect?.appendChild(opt);
   });
 
-  state.choices.department.forEach(val => {
-    const option = document.createElement("option");
-    option.value = val;
-    option.textContent = val;
-    deptSelect.appendChild(option);
-  });
-}
+  state.choices.status.forEach(choice => {
 
-  state.choices.department.forEach(val => {
-    if (deptSelect) {
-      const opt = document.createElement("option");
-      opt.value = val;
-      opt.textContent = val;
-      deptSelect.appendChild(opt);
-    }
+    const opt1 = document.createElement("option");
+    opt1.value = choice;
+    opt1.textContent = choice;
+
+    formStatus?.appendChild(opt1);
+
+    const opt2 = document.createElement("option");
+    opt2.value = choice;
+    opt2.textContent = choice;
+
+    statusFilter?.appendChild(opt2);
   });
 }
 
 async function loadChoicesFromSharePoint() {
-  const [deptField, statusField] = await Promise.all([
-    fetchFieldChoices("field_2"),
-    fetchFieldChoices("field_3")
-  ]);
+  try {
 
-state.choices = {
-  status: data.statusChoices || [],
-  department: data.departmentChoices || []
-};
+    const [deptField, statusField] = await Promise.all([
+      fetchFieldChoices("field_2"),
+      fetchFieldChoices("field_3")
+    ]);
+
+    state.choices = {
+      department: deptField.Choices || [],
+      status: statusField.Choices || []
+    };
+
+  } catch (err) {
+    console.error("Choice load failed", err);
+
+    state.choices = {
+      department: [],
+      status: []
+    };
+  }
 }
 
 function renderTable() {
