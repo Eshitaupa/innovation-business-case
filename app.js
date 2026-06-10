@@ -74,6 +74,8 @@ document.addEventListener("DOMContentLoaded", init);
 async function init() {
   cacheElements();
   bindEvents();
+  await loadChoicesFromSharePoint();
+  populateDropdowns();
   await loadRecords();
   render();
 }
@@ -224,6 +226,67 @@ function renderSummaries() {
   els.summarySavings.textContent = fmt$(sum(f, "costSavings"));
   els.summaryEfficiency.textContent = `${fmtN(avg(nums(f, "efficiencyGain")), 1)}%`;
   els.summaryPayback.textContent = `${fmtN(avg(nums(f, "paybackMonths")), 0)} mo`;
+}
+async function fetchFieldChoices(internalName) {
+  const url = `${CONFIG.sharePointSiteUrl}/_api/web/lists/getbytitle('${encodeURIComponent(CONFIG.listTitle)}')/fields/getbyinternalnameortitle('${internalName}')?$select=Choices,Title,InternalName`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Accept": "application/json;odata=nometadata"
+    },
+    credentials: "include"
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch choices for ${internalName}: HTTP ${res.status}`);
+  }
+
+  return res.json();
+}
+function populateDropdowns() {
+  const formStatus = documentSelect = document.querySelector('select[name="department"]');  const formStatus = document.querySelector('select[name="status"]');
+  const statusFilter = document.getElementById("statusFilter");
+
+  if (formStatus) formStatus.innerHTML = "";
+  if (deptSelect) deptSelect.innerHTML = "";
+  if (statusFilter) statusFilter.innerHTML = '<option value="All">All</option>';
+
+  state.choices.status.forEach(val => {
+    if (formStatus) {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = val;
+      formStatus.appendChild(opt);
+    }
+    if (statusFilter) {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = val;
+      statusFilter.appendChild(opt);
+    }
+  });
+
+  state.choices.department.forEach(val => {
+    if (deptSelect) {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = val;
+      deptSelect.appendChild(opt);
+    }
+  });
+}
+
+async function loadChoicesFromSharePoint() {
+  const [deptField, statusField] = await Promise.all([
+    fetchFieldChoices("field_2"),
+    fetchFieldChoices("field_3")
+  ]);
+
+  state.choices = {
+    department: deptField.Choices || [],
+    status: statusField.Choices || []
+  };
 }
 
 function renderTable() {
