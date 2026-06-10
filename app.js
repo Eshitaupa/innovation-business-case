@@ -285,7 +285,7 @@ function populateDropdowns() {
 
     statusFilter?.appendChild(opt2);
   });
-}
+
 
 async function loadChoicesFromSharePoint() {
   try {
