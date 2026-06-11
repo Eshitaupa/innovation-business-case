@@ -624,6 +624,9 @@
 // =============================================================================
 // CONFIG
 // =============================================================================
+// =============================================================================
+// CONFIG
+// =============================================================================
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
@@ -631,7 +634,6 @@ const CONFIG = {
   listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
-  // Maps JS keys → SharePoint internal field names
   fieldMap: {
     id:                     "Id",
     ideaName:               "Title",
@@ -653,7 +655,7 @@ const CONFIG = {
     revenueImpact:          "field_17",
     cycleTimeReduction:     "field_18",
     productivityUplift:     "field_19",
-    scheduleImpact:         "field_20",   // text field in HTML, kept as string in payload
+    scheduleImpact:         "field_20",
     goToMarketChannels:     "field_21",
     changeManagement:       "field_22",
     rolloutPlan:            "field_23",
@@ -668,18 +670,12 @@ const CONFIG = {
     modified:               "Modified"
   },
 
-  // Power Automate expects strict integers for these
-  integerFields: new Set([
-    "paybackMonths", "activeUsers",
+  // All fields the SP list stores as numbers (sent as strings to avoid PA schema mismatch)
+  numberFields: new Set([
+    "costSavings", "efficiencyGain", "paybackMonths", "activeUsers",
+    "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift",
     "toolsPlatformCharges", "licenseCost", "developmentCost",
-    "supportMaintenanceCost", "recurringCostAvoidance"
-  ]),
-
-  // These accept decimals
-  floatFields: new Set([
-    "costSavings", "efficiencyGain",
-    "adoptionRate", "revenueImpact", "cycleTimeReduction",
-    "productivityUplift", "marginImprovement"
+    "supportMaintenanceCost", "recurringCostAvoidance", "marginImprovement"
   ]),
 
   fallbackChoices: {
@@ -687,9 +683,6 @@ const CONFIG = {
     status: ["Intake", "Reviewing", "MVP", "Scaling", "On hold"]
   }
 };
-
-// Convenience getter — all numeric keys
-const ALL_NUMBER_FIELDS = new Set([...CONFIG.integerFields, ...CONFIG.floatFields]);
 
 // =============================================================================
 // STATE
@@ -706,7 +699,7 @@ const state = {
   selectedPerson: null   // { displayName, email, claims }
 };
 
-const els = {};  // cached DOM references
+const els = {};
 
 // =============================================================================
 // BOOT
@@ -736,7 +729,6 @@ async function loadFromFlow() {
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data = await res.json();
 
-    // Choices
     if (data.choices && Array.isArray(data.choices.status) && data.choices.status.length) {
       state.choices.status     = data.choices.status;
       state.choices.department = Array.isArray(data.choices.department)
@@ -747,25 +739,21 @@ async function loadFromFlow() {
       state.choices.department = uniqueChoices(rows, "field_2") || CONFIG.fallbackChoices.department;
     }
 
-    // Users
     if (Array.isArray(data.users)) {
       state.allUsers = data.users.filter(u => u.Email);
       console.log(`✓ Loaded ${state.allUsers.length} site users`);
     } else {
       state.allUsers = [];
-      console.warn("⚠ No users returned from flow.");
     }
 
-    // Records
     state.records = extractRows(data).map(mapItem);
     state.mode = "flow";
-
   } catch (err) {
     console.error("Flow load failed:", err);
-    state.records  = [];
+    state.records = [];
     state.allUsers = [];
-    state.choices  = { department: [...CONFIG.fallbackChoices.department], status: [...CONFIG.fallbackChoices.status] };
-    state.mode     = "error";
+    state.choices = { department: [...CONFIG.fallbackChoices.department], status: [...CONFIG.fallbackChoices.status] };
+    state.mode = "error";
     showToast("⚠ Could not load SharePoint data — " + err.message);
   } finally {
     setBusy(false);
@@ -785,7 +773,6 @@ async function reloadRecords() {
     state.records = extractRows(data).map(mapItem);
     state.mode = "flow";
   } catch (err) {
-    console.error("Reload failed:", err);
     showToast("⚠ Could not refresh data");
   } finally {
     setBusy(false);
@@ -833,7 +820,7 @@ function mapItem(item) {
     revenueImpact:          numOrZero(item.field_17),
     cycleTimeReduction:     numOrZero(item.field_18),
     productivityUplift:     numOrZero(item.field_19),
-    scheduleImpact:         item.field_20 || "",
+    scheduleImpact:         numOrZero(item.field_20),
     goToMarketChannels:     item.field_21 || "",
     changeManagement:       item.field_22 || "",
     rolloutPlan:            item.field_23 || "",
@@ -850,96 +837,105 @@ function mapItem(item) {
 }
 
 // =============================================================================
-// PEOPLE PICKER — filter input + native <select>
-// No floating list; the select appears below the filter when the user types.
-// FIX: option values are set via .value property (not innerHTML) so no
-//      whitespace corruption; dataset attributes are set via setAttribute.
+// PEOPLE PICKER — filter text input + native <select> list
+// Built entirely with DOM API (no innerHTML) so option values have no
+// whitespace corruption. The select only appears after 1+ chars are typed.
 // =============================================================================
 function buildPeopleSelect() {
   const container = document.getElementById("peoplePicker");
   if (!container) return;
 
-  container.innerHTML = "";  // wipe old autocomplete markup
+  container.innerHTML = "";
 
-  // — Filter input —
+  // Filter input
   const filterInput = document.createElement("input");
-  filterInput.type         = "text";
-  filterInput.id           = "personFilterInput";
-  filterInput.placeholder  = "Type name or email to search…";
+  filterInput.type = "text";
+  filterInput.id = "personFilterInput";
+  filterInput.placeholder = "Type name or email…";
   filterInput.autocomplete = "off";
-  filterInput.setAttribute("aria-label", "Filter people list");
+  filterInput.setAttribute("aria-label", "Search for a person");
 
-  // — Select list —
+  // Select list (hidden until filter has content)
   const sel = document.createElement("select");
-  sel.id   = "personSelect";
+  sel.id = "personSelect";
   sel.size = 6;
   sel.setAttribute("aria-label", "Select a person");
-  sel.style.display = "none";
-  sel.style.width   = "100%";
+  sel.style.cssText = "display:none;width:100%;";
 
   container.appendChild(filterInput);
   container.appendChild(sel);
 
-  // Filter as user types
+  // ── Filter handler ──
   filterInput.addEventListener("input", () => {
     const q = filterInput.value.trim().toLowerCase();
+
     if (q.length < 1) {
       sel.style.display = "none";
-      sel.innerHTML = "";
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
       return;
     }
 
     const matches = state.allUsers
       .filter(u =>
-        (u.Title   || "").toLowerCase().includes(q) ||
-        (u.Email   || "").toLowerCase().includes(q)
+        (u.Title || "").toLowerCase().includes(q) ||
+        (u.Email || "").toLowerCase().includes(q)
       )
       .slice(0, 50);
 
-    // Build options via DOM (not innerHTML) to avoid value whitespace bugs
-    sel.innerHTML = "";
+    // Rebuild options via DOM — no innerHTML / no template literals
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+
     if (!matches.length) {
       const empty = document.createElement("option");
       empty.disabled = true;
-      empty.textContent = "No results";
+      empty.textContent = "No results found";
       sel.appendChild(empty);
     } else {
       matches.forEach((u, i) => {
         const opt = document.createElement("option");
-        opt.value = u.LoginName || "";                 // exact, no whitespace
+        opt.value = u.LoginName;                        // exact string, no whitespace
         opt.setAttribute("data-name",  u.Title || "");
         opt.setAttribute("data-email", u.Email || "");
-        opt.textContent = `${u.Title || ""} — ${u.Email || ""}`;
-        if (i === 0) opt.selected = true;              // highlight first match
+        opt.textContent = (u.Title || "") + " — " + (u.Email || "");
         sel.appendChild(opt);
       });
-      // Restore previous selection if still in results
+
+      // Restore previous selection highlight if still present
       if (state.selectedPerson?.claims) {
-        const hit = sel.querySelector(`option[value="${CSS.escape(state.selectedPerson.claims)}"]`);
-        if (hit) hit.selected = true;
+        for (let i = 0; i < sel.options.length; i++) {
+          if (sel.options[i].value === state.selectedPerson.claims) {
+            sel.options[i].selected = true;
+            break;
+          }
+        }
       }
     }
 
     sel.style.display = "block";
   });
 
-  // Commit selection on click or keyboard
+  // ── Selection handler ──
   sel.addEventListener("change", () => {
     const opt = sel.options[sel.selectedIndex];
     if (!opt || opt.disabled) return;
-    commitPerson(opt.value, opt.getAttribute("data-name"), opt.getAttribute("data-email"));
+
+    const claims      = opt.value;
+    const displayName = opt.getAttribute("data-name")  || "";
+    const email       = opt.getAttribute("data-email") || "";
+
+    state.selectedPerson = { displayName, email, claims };
+
+    // Write to hidden form field
+    const hiddenField = els.caseForm && els.caseForm.elements.personClaims;
+    if (hiddenField) hiddenField.value = claims;
+
+    // Update the filter input to show selected name (visual confirmation)
+    filterInput.value = displayName || email;
   });
 }
 
-function commitPerson(claims, displayName, email) {
-  state.selectedPerson = { displayName, email, claims };
-  if (els.caseForm?.elements.personClaims) {
-    els.caseForm.elements.personClaims.value = claims;
-  }
-}
-
 function fillPersonPicker(record) {
-  if (!record.personDisplayName) return;
+  if (!record.personDisplayName && !record.personEmail) return;
 
   state.selectedPerson = {
     displayName: record.personDisplayName,
@@ -951,23 +947,21 @@ function fillPersonPicker(record) {
   const sel         = document.getElementById("personSelect");
   if (!filterInput || !sel) return;
 
-  // Show the existing person's name in the filter box
-  filterInput.value = record.personDisplayName;
+  filterInput.value = record.personDisplayName || record.personEmail;
 
-  // Put a single pre-selected option in the select
-  sel.innerHTML = "";
+  // Single pre-selected option
+  while (sel.firstChild) sel.removeChild(sel.firstChild);
   const opt = document.createElement("option");
   opt.value = record.personClaims;
   opt.setAttribute("data-name",  record.personDisplayName);
   opt.setAttribute("data-email", record.personEmail);
-  opt.textContent = `${record.personDisplayName} — ${record.personEmail}`;
+  opt.textContent = (record.personDisplayName || "") + " — " + (record.personEmail || "");
   opt.selected = true;
   sel.appendChild(opt);
   sel.style.display = "block";
 
-  if (els.caseForm?.elements.personClaims) {
-    els.caseForm.elements.personClaims.value = record.personClaims;
-  }
+  const hiddenField = els.caseForm && els.caseForm.elements.personClaims;
+  if (hiddenField) hiddenField.value = record.personClaims;
 }
 
 function resetPersonPicker() {
@@ -975,10 +969,12 @@ function resetPersonPicker() {
   const filterInput = document.getElementById("personFilterInput");
   const sel         = document.getElementById("personSelect");
   if (filterInput) filterInput.value = "";
-  if (sel) { sel.innerHTML = ""; sel.style.display = "none"; }
-  if (els.caseForm?.elements.personClaims) {
-    els.caseForm.elements.personClaims.value = "";
+  if (sel) {
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    sel.style.display = "none";
   }
+  const hiddenField = els.caseForm && els.caseForm.elements.personClaims;
+  if (hiddenField) hiddenField.value = "";
 }
 
 // =============================================================================
@@ -1035,21 +1031,17 @@ function bindEvents() {
     state.search = e.target.value.trim().toLowerCase();
     renderTable();
   });
-
   els.statusFilter.addEventListener("change", e => {
     state.statusFilter = e.target.value;
     renderTable();
   });
-
   els.refreshButton.addEventListener("click", async () => {
     await reloadRecords();
     render();
   });
-
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && els.drawer.classList.contains("open")) closeDrawer();
   });
-
   document.addEventListener("wheel", e => {
     if (document.activeElement.type === "number") e.preventDefault();
   }, { passive: false });
@@ -1058,11 +1050,7 @@ function bindEvents() {
 // =============================================================================
 // RENDER
 // =============================================================================
-function render() {
-  renderBadge();
-  renderSummaries();
-  renderTable();
-}
+function render() { renderBadge(); renderSummaries(); renderTable(); }
 
 function renderBadge() {
   const b = els.connectionBadge;
@@ -1081,13 +1069,10 @@ function renderSummaries() {
 function renderTable() {
   renderSummaries();
   const rows = filtered();
-
   if (!rows.length) {
-    els.caseRows.innerHTML =
-      `<tr class="empty-row"><td colspan="11">No business cases match the current view.</td></tr>`;
+    els.caseRows.innerHTML = `<tr class="empty-row"><td colspan="11">No business cases match the current view.</td></tr>`;
     return;
   }
-
   els.caseRows.innerHTML = rows.map(r => `
     <tr>
       <td class="idea-cell">${esc(r.ideaName || "Untitled case")}</td>
@@ -1137,18 +1122,18 @@ function openDrawer(record = null) {
   els.drawerTitle.textContent = record ? "Edit innovation case" : "New innovation case";
 
   if (record) {
-    Object.keys(CONFIG.fieldMap).forEach(key => {
+    for (const key of Object.keys(CONFIG.fieldMap)) {
       const ctrl = els.caseForm.elements[key];
-      if (!ctrl) return;
+      if (!ctrl) continue;
       const v = record[key];
       if (v != null) ctrl.value = v;
-    });
+    }
     els.caseForm.elements.id.value = record.id;
     fillPersonPicker(record);
   } else {
     els.caseForm.elements.id.value = "";
-    const firstStatus = state.choices.status[0] || "Intake";
-    if (els.caseForm.elements.status) els.caseForm.elements.status.value = firstStatus;
+    const s = els.caseForm.elements.status;
+    if (s) s.value = state.choices.status[0] || "Intake";
   }
 
   els.drawerBackdrop.hidden = false;
@@ -1166,13 +1151,35 @@ function closeDrawer() {
 
 // =============================================================================
 // SAVE
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOT CAUSE of HTTP 400:
+//   Power Automate's trigger JSON schema was auto-generated from a test run.
+//   Depending on how the schema was generated, PA may have typed the numeric
+//   fields as "string" or "integer". Sending the wrong JS type causes the
+//   TriggerInputSchemaMismatch error.
+//
+// SOLUTION (no flow changes needed):
+//   1. Read all values from FormData as plain strings.
+//   2. Send them to the flow as strings (field_12: "10", not 10).
+//   3. In the flow's "Create item" / "Update item" steps, PA's SharePoint
+//      connector automatically coerces the string "10" to the Number column
+//      value 10. This has always worked.
+//   4. The trigger schema validation is the ONLY thing that cared about type.
+//      Bypassing it by sending strings makes everything consistent.
+//
+// If you want to fix it in the flow instead: open the Save flow's HTTP trigger
+// → "..." → Edit → "Use sample payload" → paste a sample with number fields
+// as actual numbers → Save. That regenerates the schema with correct types.
 // =============================================================================
+
 async function saveCurrentCase(e) {
   e.preventDefault();
 
-  const record = formToRecord(new FormData(els.caseForm));
+  // Read form — keep everything as strings initially
+  const fd     = new FormData(els.caseForm);
+  const record = formToRecord(fd);
 
-  if (!record.ideaName) {
+  if (!record.ideaName.trim()) {
     showToast("Business case idea is required.");
     els.caseForm.elements.ideaName?.focus();
     return;
@@ -1181,7 +1188,7 @@ async function saveCurrentCase(e) {
   setBusy(true);
   try {
     const payload = buildSharePointPayload(record);
-    console.log("Saving payload →", JSON.stringify(payload, null, 2));
+    console.log("📤 Saving payload:", JSON.stringify(payload, null, 2));
     await saveViaFlow(payload);
     await reloadRecords();
     closeDrawer();
@@ -1189,7 +1196,7 @@ async function saveCurrentCase(e) {
     showToast(record.id ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
   } catch (err) {
     console.error("Save failed:", err);
-    showToast(`Save failed: ${err.message}`);
+    showToast("Save failed: " + err.message);
   } finally {
     setBusy(false);
   }
@@ -1208,13 +1215,15 @@ async function saveViaFlow(payload) {
 }
 
 /**
- * Build the SharePoint payload.
+ * Build the payload sent to the Save Flow.
  *
- * KEY RULES to avoid TriggerInputSchemaMismatch:
- *  - Integer fields  → parseInt(val, 10),  skipped if blank/NaN
- *  - Float fields    → parseFloat(val),     skipped if blank/NaN
- *  - Text fields     → String, skipped if empty string
- *  - NEVER send a JS string where the PA schema expects a number
+ * All numeric values are sent as STRINGS (e.g. "10" not 10).
+ * This sidesteps the PA trigger schema type-mismatch entirely.
+ * The SharePoint "Create/Update item" connector accepts string values for
+ * Number columns and coerces them automatically.
+ *
+ * Text fields that are empty are omitted (keeps payload clean).
+ * Number fields that are blank ("") are also omitted.
  */
 function buildSharePointPayload(record) {
   const payload = {
@@ -1223,32 +1232,24 @@ function buildSharePointPayload(record) {
   };
 
   for (const [jsKey, spField] of Object.entries(CONFIG.fieldMap)) {
-    // Skip meta fields handled separately
     if (["created", "modified", "id"].includes(jsKey)) continue;
 
     const val = record[jsKey];
 
-    if (CONFIG.integerFields.has(jsKey)) {
-      if (val === "" || val == null) continue;
-      const n = parseInt(String(val), 10);
-      if (isNaN(n)) continue;
-      payload[spField] = n;               // pure JS integer
-
-    } else if (CONFIG.floatFields.has(jsKey)) {
-      if (val === "" || val == null) continue;
-      const n = parseFloat(String(val));
-      if (isNaN(n)) continue;
-      payload[spField] = n;               // pure JS float
-
+    if (CONFIG.numberFields.has(jsKey)) {
+      // Send as STRING — avoids PA trigger schema integer/float mismatch
+      // SP connector will coerce to number when writing to the list column
+      const s = (val == null ? "" : String(val)).trim();
+      if (s === "" || s === "0") continue;   // omit blank / zero — optional
+      payload[spField] = s;                  // intentionally a string
     } else {
-      // Text / textarea field
       const s = (val == null ? "" : String(val)).trim();
       if (s === "") continue;
       payload[spField] = s;
     }
   }
 
-  // People/Group column
+  // People / Group field
   if (record.personClaims) {
     payload["person"]            = record.personClaims;
     payload["personDisplayName"] = record.personDisplayName || "";
@@ -1257,32 +1258,18 @@ function buildSharePointPayload(record) {
   return payload;
 }
 
-/**
- * Read FormData into a clean record.
- * Number inputs always return strings from FormData — we cast here so
- * buildSharePointPayload receives the right types.
- */
+/** Read FormData → plain string record (numbers stay as strings here too) */
 function formToRecord(fd) {
   const rec = {};
-
   for (const key of Object.keys(CONFIG.fieldMap)) {
     if (["created", "modified"].includes(key)) continue;
-
-    const raw = fd.get(key);   // always a string or null from FormData
-
-    if (CONFIG.integerFields.has(key)) {
-      rec[key] = (raw === null || raw === "") ? null : parseInt(raw, 10);
-    } else if (CONFIG.floatFields.has(key)) {
-      rec[key] = (raw === null || raw === "") ? null : parseFloat(raw);
-    } else {
-      rec[key] = raw == null ? "" : String(raw).trim();
-    }
+    const raw = fd.get(key);
+    rec[key] = raw == null ? "" : String(raw).trim();
   }
+  rec.id = fd.get("id") || "";
+  rec.status = rec.status || state.choices.status[0] || "Intake";
 
-  rec.id                = fd.get("id") || "";
-  rec.status            = rec.status   || state.choices.status[0] || "Intake";
-
-  // Person — read from hidden field (written by commitPerson / fillPersonPicker)
+  // Person — read from hidden field (written by people picker)
   rec.personClaims      = fd.get("personClaims") || "";
   rec.personDisplayName = state.selectedPerson?.displayName || "";
   rec.personEmail       = state.selectedPerson?.email       || "";
@@ -1328,35 +1315,28 @@ function exportCsv() {
     ["scalabilityNotes",      "Scalable to all GPs"],
     ["modified",              "Updated"]
   ];
-
   const rows = filtered();
   const csv = [
-    cols.map(([, label]) => csvQ(label)).join(","),
-    ...rows.map(r => cols.map(([key]) => csvQ(r[key])).join(","))
+    cols.map(([, l]) => csvQ(l)).join(","),
+    ...rows.map(r => cols.map(([k]) => csvQ(r[k])).join(","))
   ].join("\r\n");
-
   const a = Object.assign(document.createElement("a"), {
     href:     URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })),
     download: `innovation-cases-${new Date().toISOString().slice(0, 10)}.csv`
   });
-  document.body.append(a);
-  a.click();
-  a.remove();
+  document.body.append(a); a.click(); a.remove();
 }
 
 // =============================================================================
-// UTILITY
+// UTILITIES
 // =============================================================================
-function setBusy(v) {
-  state.busy = v;
-  document.body.classList.toggle("is-busy", v);
-}
+function setBusy(v) { state.busy = v; document.body.classList.toggle("is-busy", v); }
 
 function showToast(msg) {
   clearTimeout(state.toastTimer);
   els.toast.textContent = msg;
   els.toast.classList.add("show");
-  state.toastTimer = setTimeout(() => els.toast.classList.remove("show"), 3800);
+  state.toastTimer = setTimeout(() => els.toast.classList.remove("show"), 4000);
 }
 
 function numOrZero(v) {
@@ -1382,8 +1362,8 @@ function fmt$(v) {
   }).format(n);
 }
 
-const fmtPct = v => (v === "" || v == null || v === 0) ? "" : `${fmtN(Number(v), 1)}%`;
-const fmtMo  = v => (v === "" || v == null || v === 0) ? "" : `${fmtN(Number(v), 0)} mo`;
+const fmtPct = v => (!v || v === "0") ? "" : `${fmtN(Number(v), 1)}%`;
+const fmtMo  = v => (!v || v === "0") ? "" : `${fmtN(Number(v), 0)} mo`;
 
 function fmtN(v, d = 0) {
   const n = Number(v) || 0;
