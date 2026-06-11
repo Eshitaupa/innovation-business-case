@@ -798,7 +798,7 @@ function mapItem(item) {
   const p = item.person || item.Person || null;
   return {
     id:                     item.Id    || item.ID   || "",
-    ideaName:               item.Title || "",
+    ideaName:               item.Title || item.title || "",
     personDisplayName:      p?.DisplayName || p?.displayName || "",
     personEmail:            p?.Email       || p?.email       || "",
     personClaims:           p?.Claims      || p?.claims      || "",
@@ -858,7 +858,7 @@ function buildPeopleSelect() {
   // Select list (hidden until filter has content)
   const sel = document.createElement("select");
   sel.id = "personSelect";
-  sel.size = 6;
+  sel.size = 4;
   sel.setAttribute("aria-label", "Select a person");
   sel.style.cssText = "display:none;width:100%;";
 
@@ -869,7 +869,7 @@ function buildPeopleSelect() {
   filterInput.addEventListener("input", () => {
     const q = filterInput.value.trim().toLowerCase();
 
-    if (q.length < 1) {
+    if (q.length < 2) {
       sel.style.display = "none";
       while (sel.firstChild) sel.removeChild(sel.firstChild);
       return;
@@ -1240,7 +1240,6 @@ function buildSharePointPayload(record) {
   // Person / Group field
   if (record.personClaims) {
     payload.person = record.personClaims;
-    // person= "i:0#.f|membership|user@company.com";
   }
 
   return payload;
