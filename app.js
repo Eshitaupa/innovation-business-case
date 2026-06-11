@@ -914,24 +914,25 @@ function buildPeopleSelect() {
     sel.style.display = "block";
   });
 
-  // ── Selection handler ──
-  sel.addEventListener("change", () => {
-    const opt = sel.options[sel.selectedIndex];
-    if (!opt || opt.disabled) return;
+sel.addEventListener("change", () => {
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || opt.disabled) return;
 
-    const claims      = opt.value;
-    const displayName = opt.getAttribute("data-name")  || "";
-    const email       = opt.getAttribute("data-email") || "";
+  const claims = opt.value;
+  const displayName = opt.getAttribute("data-name") || "";
+  const email = opt.getAttribute("data-email") || "";
 
-    state.selectedPerson = { displayName, email, claims };
+  state.selectedPerson = { displayName, email, claims };
 
-    // Write to hidden form field
-    const hiddenField = els.caseForm && els.caseForm.elements.personClaims;
-    if (hiddenField) hiddenField.value = claims;
+  const hiddenField = els.caseForm && els.caseForm.elements.personClaims;
+  if (hiddenField) hiddenField.value = claims;
 
-    // Update the filter input to show selected name (visual confirmation)
-    filterInput.value = displayName || email;
-  });
+  filterInput.value = displayName || email;
+
+  // ✅ ADD THIS
+  sel.style.display = "none";
+  sel.innerHTML = "";
+});
 }
 
 function fillPersonPicker(record) {
@@ -1239,7 +1240,7 @@ function buildSharePointPayload(record) {
   // Person / Group field
   if (record.personClaims) {
     payload.person = record.personClaims;
-    payload.personDisplayName = record.personDisplayName || "";
+    "person"= "i:0#.f|membership|user@company.com";
   }
 
   return payload;
