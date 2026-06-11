@@ -621,15 +621,17 @@
 // =============================================================================
 // CONFIG
 // =============================================================================
+// =============================================================================
+// CONFIG
+// =============================================================================
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
-
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
 
   listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
-
   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
+  // Maps JS keys → SharePoint internal field names
   fieldMap: {
     id:                     "Id",
     ideaName:               "Title",
@@ -651,7 +653,7 @@ const CONFIG = {
     revenueImpact:          "field_17",
     cycleTimeReduction:     "field_18",
     productivityUplift:     "field_19",
-    scheduleImpact:         "field_20",
+    scheduleImpact:         "field_20",   // text field in HTML, kept as string in payload
     goToMarketChannels:     "field_21",
     changeManagement:       "field_22",
     rolloutPlan:            "field_23",
@@ -666,25 +668,19 @@ const CONFIG = {
     modified:               "Modified"
   },
 
-  // ── SPLIT: integer fields vs decimal fields ──────────────────────────────
-  // Power Automate schema expects strict Integer for these; send via parseInt.
+  // Power Automate expects strict integers for these
   integerFields: new Set([
     "paybackMonths", "activeUsers",
     "toolsPlatformCharges", "licenseCost", "developmentCost",
     "supportMaintenanceCost", "recurringCostAvoidance"
   ]),
-  // These may have decimals; send via parseFloat.
+
+  // These accept decimals
   floatFields: new Set([
     "costSavings", "efficiencyGain",
     "adoptionRate", "revenueImpact", "cycleTimeReduction",
     "productivityUplift", "marginImprovement"
   ]),
-
-  // Combined for convenience
-  get numberFields() {
-    const s = new Set([...this.integerFields, ...this.floatFields]);
-    return s;
-  },
 
   fallbackChoices: {
     department: ["OGC"],
@@ -692,24 +688,25 @@ const CONFIG = {
   }
 };
 
+// Convenience getter — all numeric keys
+const ALL_NUMBER_FIELDS = new Set([...CONFIG.integerFields, ...CONFIG.floatFields]);
+
 // =============================================================================
 // STATE
 // =============================================================================
 const state = {
-  records:      [],
-  allUsers:     [],
-  choices:      { department: [], status: [] },
-  mode:         "connecting",
-  search:       "",
-  statusFilter: "All",
-  busy:         false,
-  toastTimer:   0,
-  selectedPerson: null,
-  // People picker select filter
-  peopleFilterText: ""
+  records:        [],
+  allUsers:       [],
+  choices:        { department: [], status: [] },
+  mode:           "connecting",
+  search:         "",
+  statusFilter:   "All",
+  busy:           false,
+  toastTimer:     0,
+  selectedPerson: null   // { displayName, email, claims }
 };
 
-const els = {};
+const els = {};  // cached DOM references
 
 // =============================================================================
 // BOOT
@@ -721,7 +718,7 @@ async function init() {
   bindEvents();
   await loadFromFlow();
   populateDropdowns();
-  buildPeopleSelect();   // build the <select> once users are loaded
+  buildPeopleSelect();
   render();
 }
 
@@ -732,41 +729,42 @@ async function loadFromFlow() {
   setBusy(true);
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({})
+      body: JSON.stringify({})
     });
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data = await res.json();
 
+    // Choices
     if (data.choices && Array.isArray(data.choices.status) && data.choices.status.length) {
       state.choices.status     = data.choices.status;
       state.choices.department = Array.isArray(data.choices.department)
-        ? data.choices.department
-        : CONFIG.fallbackChoices.department;
+        ? data.choices.department : CONFIG.fallbackChoices.department;
     } else {
       const rows = extractRows(data);
       state.choices.status     = uniqueChoices(rows, "field_3") || CONFIG.fallbackChoices.status;
       state.choices.department = uniqueChoices(rows, "field_2") || CONFIG.fallbackChoices.department;
     }
 
+    // Users
     if (Array.isArray(data.users)) {
       state.allUsers = data.users.filter(u => u.Email);
-      console.log(`✓ Loaded ${state.allUsers.length} site users for People Picker`);
+      console.log(`✓ Loaded ${state.allUsers.length} site users`);
     } else {
       state.allUsers = [];
       console.warn("⚠ No users returned from flow.");
     }
 
-    const rows = extractRows(data);
-    state.records = rows.map(mapItem);
+    // Records
+    state.records = extractRows(data).map(mapItem);
     state.mode = "flow";
 
   } catch (err) {
     console.error("Flow load failed:", err);
     state.records  = [];
     state.allUsers = [];
-    state.choices  = { ...CONFIG.fallbackChoices };
+    state.choices  = { department: [...CONFIG.fallbackChoices.department], status: [...CONFIG.fallbackChoices.status] };
     state.mode     = "error";
     showToast("⚠ Could not load SharePoint data — " + err.message);
   } finally {
@@ -778,9 +776,9 @@ async function reloadRecords() {
   setBusy(true);
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({})
+      body: JSON.stringify({})
     });
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data = await res.json();
@@ -812,7 +810,7 @@ function uniqueChoices(rows, field) {
 function mapItem(item) {
   const p = item.person || item.Person || null;
   return {
-    id:                     item.Id || item.ID || "",
+    id:                     item.Id    || item.ID   || "",
     ideaName:               item.Title || "",
     personDisplayName:      p?.DisplayName || p?.displayName || "",
     personEmail:            p?.Email       || p?.email       || "",
@@ -852,43 +850,37 @@ function mapItem(item) {
 }
 
 // =============================================================================
-// PEOPLE PICKER  — select + filter input (no floating list, no layout disruption)
+// PEOPLE PICKER — filter input + native <select>
+// No floating list; the select appears below the filter when the user types.
+// FIX: option values are set via .value property (not innerHTML) so no
+//      whitespace corruption; dataset attributes are set via setAttribute.
 // =============================================================================
-
-/**
- * Build (or rebuild) the hidden <select> and inject the filter input above it.
- * The <select> lives inside #peoplePicker which already has the label in HTML.
- * We replace whatever is in that container with two elements:
- *   1. A text <input> for filtering
- *   2. A <select> showing matched users
- */
 function buildPeopleSelect() {
   const container = document.getElementById("peoplePicker");
   if (!container) return;
 
-  // Wipe the old autocomplete markup
-  container.innerHTML = "";
+  container.innerHTML = "";  // wipe old autocomplete markup
 
-  // ── Filter input ────────────────────────────────────────────────────────
+  // — Filter input —
   const filterInput = document.createElement("input");
-  filterInput.type        = "text";
-  filterInput.id          = "personFilterInput";
-  filterInput.placeholder = "Type to filter people…";
+  filterInput.type         = "text";
+  filterInput.id           = "personFilterInput";
+  filterInput.placeholder  = "Type name or email to search…";
   filterInput.autocomplete = "off";
   filterInput.setAttribute("aria-label", "Filter people list");
 
-  // ── Select ──────────────────────────────────────────────────────────────
+  // — Select list —
   const sel = document.createElement("select");
   sel.id   = "personSelect";
-  sel.size = 5;           // shows 5 rows; still scrollable for more
+  sel.size = 6;
   sel.setAttribute("aria-label", "Select a person");
-  // Show only when there is at least 1 char in the filter
   sel.style.display = "none";
+  sel.style.width   = "100%";
 
   container.appendChild(filterInput);
   container.appendChild(sel);
 
-  // ── Events ───────────────────────────────────────────────────────────────
+  // Filter as user types
   filterInput.addEventListener("input", () => {
     const q = filterInput.value.trim().toLowerCase();
     if (q.length < 1) {
@@ -899,49 +891,55 @@ function buildPeopleSelect() {
 
     const matches = state.allUsers
       .filter(u =>
-        (u.Title || "").toLowerCase().includes(q) ||
-        (u.Email || "").toLowerCase().includes(q)
+        (u.Title   || "").toLowerCase().includes(q) ||
+        (u.Email   || "").toLowerCase().includes(q)
       )
       .slice(0, 50);
 
-    sel.innerHTML = matches.length
-      ? matches.map(u =>
-          `<option value="${escAttr(u.LoginName)}"
-            data-name="${escAttr(u.Title)}"
-            data-email="${escAttr(u.Email)}">
-            ${esc(u.Title)} — ${esc(u.Email)}
-          </option>`
-        ).join("")
-      : `<option disabled>No results</option>`;
+    // Build options via DOM (not innerHTML) to avoid value whitespace bugs
+    sel.innerHTML = "";
+    if (!matches.length) {
+      const empty = document.createElement("option");
+      empty.disabled = true;
+      empty.textContent = "No results";
+      sel.appendChild(empty);
+    } else {
+      matches.forEach((u, i) => {
+        const opt = document.createElement("option");
+        opt.value = u.LoginName || "";                 // exact, no whitespace
+        opt.setAttribute("data-name",  u.Title || "");
+        opt.setAttribute("data-email", u.Email || "");
+        opt.textContent = `${u.Title || ""} — ${u.Email || ""}`;
+        if (i === 0) opt.selected = true;              // highlight first match
+        sel.appendChild(opt);
+      });
+      // Restore previous selection if still in results
+      if (state.selectedPerson?.claims) {
+        const hit = sel.querySelector(`option[value="${CSS.escape(state.selectedPerson.claims)}"]`);
+        if (hit) hit.selected = true;
+      }
+    }
 
     sel.style.display = "block";
-    // Re-select if previously selected person still in list
-    if (state.selectedPerson?.claims) {
-      const opt = sel.querySelector(`option[value="${escAttr(state.selectedPerson.claims)}"]`);
-      if (opt) opt.selected = true;
-    }
   });
 
+  // Commit selection on click or keyboard
   sel.addEventListener("change", () => {
     const opt = sel.options[sel.selectedIndex];
     if (!opt || opt.disabled) return;
-    state.selectedPerson = {
-      displayName: opt.dataset.name,
-      email:       opt.dataset.email,
-      claims:      opt.value
-    };
-    // Write claims to hidden form field
-    if (els.caseForm?.elements.personClaims) {
-      els.caseForm.elements.personClaims.value = opt.value;
-    }
+    commitPerson(opt.value, opt.getAttribute("data-name"), opt.getAttribute("data-email"));
   });
 }
 
-/** Pre-fill picker when editing a record */
+function commitPerson(claims, displayName, email) {
+  state.selectedPerson = { displayName, email, claims };
+  if (els.caseForm?.elements.personClaims) {
+    els.caseForm.elements.personClaims.value = claims;
+  }
+}
+
 function fillPersonPicker(record) {
-  const filterInput = document.getElementById("personFilterInput");
-  const sel         = document.getElementById("personSelect");
-  if (!filterInput || !sel || !record.personDisplayName) return;
+  if (!record.personDisplayName) return;
 
   state.selectedPerson = {
     displayName: record.personDisplayName,
@@ -949,15 +947,22 @@ function fillPersonPicker(record) {
     claims:      record.personClaims
   };
 
-  // Show the name in the filter box so the user sees who is selected
+  const filterInput = document.getElementById("personFilterInput");
+  const sel         = document.getElementById("personSelect");
+  if (!filterInput || !sel) return;
+
+  // Show the existing person's name in the filter box
   filterInput.value = record.personDisplayName;
 
-  // Populate select with just this user so it shows as selected
-  sel.innerHTML = `<option value="${escAttr(record.personClaims)}"
-    data-name="${escAttr(record.personDisplayName)}"
-    data-email="${escAttr(record.personEmail)}" selected>
-    ${esc(record.personDisplayName)} — ${esc(record.personEmail)}
-  </option>`;
+  // Put a single pre-selected option in the select
+  sel.innerHTML = "";
+  const opt = document.createElement("option");
+  opt.value = record.personClaims;
+  opt.setAttribute("data-name",  record.personDisplayName);
+  opt.setAttribute("data-email", record.personEmail);
+  opt.textContent = `${record.personDisplayName} — ${record.personEmail}`;
+  opt.selected = true;
+  sel.appendChild(opt);
   sel.style.display = "block";
 
   if (els.caseForm?.elements.personClaims) {
@@ -965,13 +970,12 @@ function fillPersonPicker(record) {
   }
 }
 
-/** Reset picker to empty state */
 function resetPersonPicker() {
   state.selectedPerson = null;
   const filterInput = document.getElementById("personFilterInput");
   const sel         = document.getElementById("personSelect");
   if (filterInput) filterInput.value = "";
-  if (sel)  { sel.innerHTML = ""; sel.style.display = "none"; }
+  if (sel) { sel.innerHTML = ""; sel.style.display = "none"; }
   if (els.caseForm?.elements.personClaims) {
     els.caseForm.elements.personClaims.value = "";
   }
@@ -1016,7 +1020,6 @@ function cacheElements() {
     "drawerBackdrop", "closeDrawerButton", "cancelButton",
     "caseForm", "drawerTitle", "saveButton", "toast"
   ].forEach(id => els[id] = document.getElementById(id));
-
   els.drawer = document.getElementById("caseDrawer");
 }
 
@@ -1136,7 +1139,9 @@ function openDrawer(record = null) {
   if (record) {
     Object.keys(CONFIG.fieldMap).forEach(key => {
       const ctrl = els.caseForm.elements[key];
-      if (ctrl && record[key] != null) ctrl.value = record[key];
+      if (!ctrl) return;
+      const v = record[key];
+      if (v != null) ctrl.value = v;
     });
     els.caseForm.elements.id.value = record.id;
     fillPersonPicker(record);
@@ -1164,20 +1169,22 @@ function closeDrawer() {
 // =============================================================================
 async function saveCurrentCase(e) {
   e.preventDefault();
+
   const record = formToRecord(new FormData(els.caseForm));
 
   if (!record.ideaName) {
     showToast("Business case idea is required.");
-    els.caseForm.elements.ideaName.focus();
+    els.caseForm.elements.ideaName?.focus();
     return;
   }
 
   setBusy(true);
   try {
-    await saveViaFlow(record);
+    const payload = buildSharePointPayload(record);
+    console.log("Saving payload →", JSON.stringify(payload, null, 2));
+    await saveViaFlow(payload);
     await reloadRecords();
     closeDrawer();
-    els.caseForm.reset();
     render();
     showToast(record.id ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
   } catch (err) {
@@ -1188,16 +1195,12 @@ async function saveCurrentCase(e) {
   }
 }
 
-async function saveViaFlow(record) {
-  const payload = buildSharePointPayload(record);
-  console.log("Saving payload:", payload);
-
+async function saveViaFlow(payload) {
   const res = await fetch(CONFIG.saveFlowUrl, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify(payload)
   });
-
   let text = "";
   try { text = await res.text(); } catch {}
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
@@ -1205,13 +1208,13 @@ async function saveViaFlow(record) {
 }
 
 /**
- * Build the JSON payload for the Save Flow.
+ * Build the SharePoint payload.
  *
- * FIX for HTTP 400 TriggerInputSchemaMismatch:
- *   Power Automate's schema expects strict Integer/Number types.
- *   We now use parseInt() for integer fields and parseFloat() for decimal
- *   fields, and skip any field whose value is blank / NaN so we never send
- *   a string where the schema expects a number.
+ * KEY RULES to avoid TriggerInputSchemaMismatch:
+ *  - Integer fields  → parseInt(val, 10),  skipped if blank/NaN
+ *  - Float fields    → parseFloat(val),     skipped if blank/NaN
+ *  - Text fields     → String, skipped if empty string
+ *  - NEVER send a JS string where the PA schema expects a number
  */
 function buildSharePointPayload(record) {
   const payload = {
@@ -1219,34 +1222,33 @@ function buildSharePointPayload(record) {
     id:        record.id ? String(record.id) : ""
   };
 
-  Object.entries(CONFIG.fieldMap).forEach(([jsKey, spField]) => {
-    if (["created", "modified", "id"].includes(jsKey)) return;
+  for (const [jsKey, spField] of Object.entries(CONFIG.fieldMap)) {
+    // Skip meta fields handled separately
+    if (["created", "modified", "id"].includes(jsKey)) continue;
 
     const val = record[jsKey];
 
     if (CONFIG.integerFields.has(jsKey)) {
-      // Must be a whole integer — skip if empty
-      if (val === "" || val == null) return;
-      const n = parseInt(val, 10);
-      if (isNaN(n)) return;
-      payload[spField] = n;
+      if (val === "" || val == null) continue;
+      const n = parseInt(String(val), 10);
+      if (isNaN(n)) continue;
+      payload[spField] = n;               // pure JS integer
 
     } else if (CONFIG.floatFields.has(jsKey)) {
-      // Decimal-safe number — skip if empty
-      if (val === "" || val == null) return;
-      const n = parseFloat(val);
-      if (isNaN(n)) return;
-      payload[spField] = n;
+      if (val === "" || val == null) continue;
+      const n = parseFloat(String(val));
+      if (isNaN(n)) continue;
+      payload[spField] = n;               // pure JS float
 
     } else {
-      // Text field — skip if empty
-      const s = String(val ?? "").trim();
-      if (s === "") return;
+      // Text / textarea field
+      const s = (val == null ? "" : String(val)).trim();
+      if (s === "") continue;
       payload[spField] = s;
     }
-  });
+  }
 
-  // People/Group field
+  // People/Group column
   if (record.personClaims) {
     payload["person"]            = record.personClaims;
     payload["personDisplayName"] = record.personDisplayName || "";
@@ -1255,28 +1257,35 @@ function buildSharePointPayload(record) {
   return payload;
 }
 
-/** Reads FormData → clean JS record */
+/**
+ * Read FormData into a clean record.
+ * Number inputs always return strings from FormData — we cast here so
+ * buildSharePointPayload receives the right types.
+ */
 function formToRecord(fd) {
   const rec = {};
 
-  Object.keys(CONFIG.fieldMap).forEach(key => {
-    if (["created", "modified"].includes(key)) return;
-    const val = fd.get(key);
+  for (const key of Object.keys(CONFIG.fieldMap)) {
+    if (["created", "modified"].includes(key)) continue;
+
+    const raw = fd.get(key);   // always a string or null from FormData
 
     if (CONFIG.integerFields.has(key)) {
-      rec[key] = (val === "" || val == null) ? null : parseInt(val, 10);
+      rec[key] = (raw === null || raw === "") ? null : parseInt(raw, 10);
     } else if (CONFIG.floatFields.has(key)) {
-      rec[key] = (val === "" || val == null) ? null : parseFloat(val);
+      rec[key] = (raw === null || raw === "") ? null : parseFloat(raw);
     } else {
-      rec[key] = val == null ? "" : String(val).trim();
+      rec[key] = raw == null ? "" : String(raw).trim();
     }
-  });
+  }
 
   rec.id                = fd.get("id") || "";
-  rec.status            = rec.status || state.choices.status[0] || "Intake";
+  rec.status            = rec.status   || state.choices.status[0] || "Intake";
+
+  // Person — read from hidden field (written by commitPerson / fillPersonPicker)
   rec.personClaims      = fd.get("personClaims") || "";
-  rec.personDisplayName = state.selectedPerson?.displayName || state.selectedPerson?.DisplayName || "";
-  rec.personEmail       = state.selectedPerson?.email       || state.selectedPerson?.Email       || "";
+  rec.personDisplayName = state.selectedPerson?.displayName || "";
+  rec.personEmail       = state.selectedPerson?.email       || "";
 
   return rec;
 }
@@ -1286,42 +1295,42 @@ function formToRecord(fd) {
 // =============================================================================
 function exportCsv() {
   const cols = [
-    ["ideaName",             "Business case idea"],
-    ["status",               "Status"],
-    ["personDisplayName",    "Person"],
-    ["department",           "Department or GP"],
-    ["problemStatement",     "Problem statement"],
-    ["scaleBusinessImpact",  "Scale and business impact"],
-    ["currentWorkarounds",   "Current workarounds failing"],
-    ["proposedSolution",     "Innovation approach"],
-    ["mvpScope",             "MVP scope"],
-    ["enabler",              "Technology or process enabler"],
-    ["unfairAdvantage",      "Unfair advantage"],
-    ["valueProposition",     "Value proposition"],
-    ["costSavings",          "Cost savings"],
-    ["efficiencyGain",       "Efficiency gain %"],
-    ["paybackMonths",        "Payback period months"],
-    ["activeUsers",          "Active users"],
-    ["adoptionRate",         "Adoption rate %"],
-    ["revenueImpact",        "Revenue impact"],
-    ["cycleTimeReduction",   "Cycle time reduction %"],
-    ["productivityUplift",   "Productivity uplift %"],
-    ["scheduleImpact",       "Schedule impact"],
-    ["goToMarketChannels",   "Digital and direct sales channel"],
-    ["changeManagement",     "Change management and training"],
-    ["rolloutPlan",          "Phased rollout plan"],
-    ["toolsPlatformCharges", "Tools and platform charges"],
-    ["licenseCost",          "License cost"],
-    ["developmentCost",      "Development cost"],
+    ["ideaName",              "Business case idea"],
+    ["status",                "Status"],
+    ["personDisplayName",     "Person"],
+    ["department",            "Department or GP"],
+    ["problemStatement",      "Problem statement"],
+    ["scaleBusinessImpact",   "Scale and business impact"],
+    ["currentWorkarounds",    "Current workarounds failing"],
+    ["proposedSolution",      "Innovation approach"],
+    ["mvpScope",              "MVP scope"],
+    ["enabler",               "Technology or process enabler"],
+    ["unfairAdvantage",       "Unfair advantage"],
+    ["valueProposition",      "Value proposition"],
+    ["costSavings",           "Cost savings"],
+    ["efficiencyGain",        "Efficiency gain %"],
+    ["paybackMonths",         "Payback period months"],
+    ["activeUsers",           "Active users"],
+    ["adoptionRate",          "Adoption rate %"],
+    ["revenueImpact",         "Revenue impact"],
+    ["cycleTimeReduction",    "Cycle time reduction %"],
+    ["productivityUplift",    "Productivity uplift %"],
+    ["scheduleImpact",        "Schedule impact"],
+    ["goToMarketChannels",    "Digital and direct sales channel"],
+    ["changeManagement",      "Change management and training"],
+    ["rolloutPlan",           "Phased rollout plan"],
+    ["toolsPlatformCharges",  "Tools and platform charges"],
+    ["licenseCost",           "License cost"],
+    ["developmentCost",       "Development cost"],
     ["supportMaintenanceCost","Support and maintenance"],
     ["recurringCostAvoidance","Recurring cost avoidance"],
-    ["marginImprovement",    "Margin improvement %"],
-    ["scalabilityNotes",     "Scalable to all GPs"],
-    ["modified",             "Updated"]
+    ["marginImprovement",     "Margin improvement %"],
+    ["scalabilityNotes",      "Scalable to all GPs"],
+    ["modified",              "Updated"]
   ];
 
   const rows = filtered();
-  const csv  = [
+  const csv = [
     cols.map(([, label]) => csvQ(label)).join(","),
     ...rows.map(r => cols.map(([key]) => csvQ(r[key])).join(","))
   ].join("\r\n");
@@ -1336,7 +1345,7 @@ function exportCsv() {
 }
 
 // =============================================================================
-// UTILITY HELPERS
+// UTILITY
 // =============================================================================
 function setBusy(v) {
   state.busy = v;
@@ -1351,7 +1360,7 @@ function showToast(msg) {
 }
 
 function numOrZero(v) {
-  return v === "" || v == null || isNaN(Number(v)) ? 0 : Number(v);
+  return (v === "" || v == null || isNaN(Number(v))) ? 0 : Number(v);
 }
 
 function choiceText(v) {
@@ -1373,8 +1382,8 @@ function fmt$(v) {
   }).format(n);
 }
 
-const fmtPct = v => (v === "" || v == null) ? "" : `${fmtN(Number(v), 1)}%`;
-const fmtMo  = v => (v === "" || v == null) ? "" : `${fmtN(Number(v), 0)} mo`;
+const fmtPct = v => (v === "" || v == null || v === 0) ? "" : `${fmtN(Number(v), 1)}%`;
+const fmtMo  = v => (v === "" || v == null || v === 0) ? "" : `${fmtN(Number(v), 0)} mo`;
 
 function fmtN(v, d = 0) {
   const n = Number(v) || 0;
