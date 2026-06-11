@@ -72,17 +72,14 @@
           <span>Total cases</span>
           <strong id="summaryTotal">0</strong>
         </article>
-
         <article class="metric-card">
           <span>Cost savings</span>
           <strong id="summarySavings">$0</strong>
         </article>
-
         <article class="metric-card">
           <span>Avg efficiency</span>
           <strong id="summaryEfficiency">0%</strong>
         </article>
-
         <article class="metric-card">
           <span>Avg payback</span>
           <strong id="summaryPayback">0</strong>
@@ -94,22 +91,10 @@
           <svg><use href="#icon-search"></use></svg>
           <input id="searchInput" type="search" autocomplete="off" placeholder="Search cases">
         </label>
-
-        <!-- <label class="select-field">
-          <span>Status</span>
-          <select id="statusFilter">
-            <option value="All">All</option>
-            <option value="Intake">Intake</option>
-            <option value="Reviewing">Reviewing</option>
-            <option value="MVP">MVP</option>
-            <option value="Scaling">Scaling</option>
-            <option value="On hold">On hold</option>
-          </select>
-        </label> -->
         <label class="select-field">
-  <span>Status</span>
-  <select id="statusFilter"></select>
-</label>
+          <span>Status</span>
+          <select id="statusFilter"></select>
+        </label>
       </section>
 
       <section class="table-panel" aria-label="Innovation business cases">
@@ -119,7 +104,7 @@
               <tr>
                 <th>Business case idea</th>
                 <th>Status</th>
-                <th>Owner</th>
+                <th>Person</th>
                 <th>Value proposition</th>
                 <th>Cost savings</th>
                 <th>Efficiency</th>
@@ -142,13 +127,14 @@
   <aside id="caseDrawer" class="case-drawer" aria-hidden="true" aria-labelledby="drawerTitle">
     <form id="caseForm" autocomplete="off">
       <input type="hidden" name="id">
+      <!-- Stores the selected user's Claims string for SharePoint save -->
+      <input type="hidden" name="personClaims">
 
       <header class="drawer-header">
         <div>
           <p class="kicker">Lean execution canvas</p>
           <h2 id="drawerTitle">New innovation case</h2>
         </div>
-
         <button id="closeDrawerButton" class="icon-button" type="button" title="Close" aria-label="Close">
           <svg><use href="#icon-close"></use></svg>
         </button>
@@ -163,31 +149,37 @@
               <input name="ideaName" type="text" required maxlength="120">
             </label>
 
+            <!-- People Picker -->
             <label>
-              <span>Owner</span>
-              <input name="owner" type="text" maxlength="80">
+              <span>Person</span>
+              <div class="people-picker" id="peoplePicker">
+                <input
+                  type="text"
+                  id="personSearch"
+                  autocomplete="off"
+                  placeholder="Search name or email..."
+                  aria-label="Search person"
+                  aria-autocomplete="list"
+                  aria-controls="personSuggestions"
+                  aria-expanded="false"
+                >
+                <ul id="personSuggestions" class="people-suggestions" role="listbox" hidden></ul>
+                <div id="personSelected" class="person-selected" hidden>
+                  <span id="personSelectedName"></span>
+                  <button type="button" id="personClearBtn" class="person-clear" aria-label="Remove person">×</button>
+                </div>
+              </div>
             </label>
 
-           <label>
-            <span>Department or GP </span>
-<select name="department"></select>
-</label>
+            <label>
+              <span>Department or GP</span>
+              <select name="department"></select>
+            </label>
 
-
-            <!-- <label>
-              <span>Status</span>
-              <select name="status">
-                <option value="Intake">Intake</option>
-                <option value="Reviewing">Reviewing</option>
-                <option value="MVP">MVP</option>
-                <option value="Scaling">Scaling</option>
-                <option value="On hold">On hold</option>
-              </select>
-            </label> -->
             <label class="select-field">
-              <span>Status </span>
-<select name="status"></select>
-</label>
+              <span>Status</span>
+              <select name="status"></select>
+            </label>
           </div>
         </section>
 
@@ -198,12 +190,10 @@
               <span>Pain point users face today</span>
               <textarea name="problemStatement" rows="3"></textarea>
             </label>
-
             <label>
               <span>Scale and business impact</span>
               <textarea name="scaleBusinessImpact" rows="3"></textarea>
             </label>
-
             <label>
               <span>Current workarounds failing</span>
               <textarea name="currentWorkarounds" rows="3"></textarea>
@@ -218,22 +208,18 @@
               <span>Innovation approach</span>
               <textarea name="proposedSolution" rows="3"></textarea>
             </label>
-
             <label>
               <span>MVP scope</span>
               <textarea name="mvpScope" rows="3"></textarea>
             </label>
-
             <label>
               <span>Technology or process enabler</span>
               <textarea name="enabler" rows="3"></textarea>
             </label>
-
             <label>
               <span>Unfair advantage</span>
               <textarea name="unfairAdvantage" rows="3"></textarea>
             </label>
-
             <label class="wide">
               <span>Value proposition</span>
               <textarea name="valueProposition" rows="3"></textarea>
@@ -248,42 +234,34 @@
               <span>Cost savings</span>
               <input name="costSavings" type="text" inputmode="numeric">
             </label>
-
             <label>
               <span>Efficiency gain %</span>
               <input name="efficiencyGain" type="number">
             </label>
-
             <label>
               <span>Payback period months</span>
               <input name="paybackMonths" type="number" min="0">
             </label>
-
             <label>
               <span>Active users</span>
               <input name="activeUsers" type="number" min="0">
             </label>
-
             <label>
               <span>Adoption rate %</span>
               <input name="adoptionRate" type="number" min="0" max="100">
             </label>
-
             <label>
               <span>Revenue impact</span>
               <input name="revenueImpact" type="number" min="0">
             </label>
-
             <label>
               <span>Cycle time reduction %</span>
               <input name="cycleTimeReduction" type="number" min="0" max="100">
             </label>
-
             <label>
               <span>Productivity uplift %</span>
               <input name="productivityUplift" type="number" min="0" max="100">
             </label>
-
             <label>
               <span>Schedule impact</span>
               <input name="scheduleImpact" type="text" maxlength="60">
@@ -298,12 +276,10 @@
               <span>Digital and direct sales channel</span>
               <textarea name="goToMarketChannels" rows="3"></textarea>
             </label>
-
             <label>
               <span>Change management and training</span>
               <textarea name="changeManagement" rows="3"></textarea>
             </label>
-
             <label>
               <span>Phased rollout plan</span>
               <textarea name="rolloutPlan" rows="3"></textarea>
@@ -318,32 +294,26 @@
               <span>Tools and platform charges</span>
               <input name="toolsPlatformCharges" type="number" min="0">
             </label>
-
             <label>
               <span>License cost</span>
               <input name="licenseCost" type="number" min="0">
             </label>
-
             <label>
               <span>Development cost</span>
               <input name="developmentCost" type="number" min="0">
             </label>
-
             <label>
               <span>Support and maintenance</span>
               <input name="supportMaintenanceCost" type="number" min="0">
             </label>
-
             <label>
               <span>Recurring cost avoidance</span>
               <input name="recurringCostAvoidance" type="number" min="0">
             </label>
-
             <label>
               <span>Margin improvement %</span>
               <input name="marginImprovement" type="number" min="0" max="100">
             </label>
-
             <label class="wide">
               <span>Scalable to all GPs</span>
               <textarea name="scalabilityNotes" rows="3"></textarea>
