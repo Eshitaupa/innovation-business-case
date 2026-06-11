@@ -672,7 +672,7 @@ const CONFIG = {
 
   numberFields: new Set([
     "costSavings", "efficiencyGain", "paybackMonths", "activeUsers",
-    "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift",
+    "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift","scheduleImpact", 
     "toolsPlatformCharges", "licenseCost", "developmentCost",
     "supportMaintenanceCost", "recurringCostAvoidance", "marginImprovement"
   ]),
