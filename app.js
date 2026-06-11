@@ -1240,7 +1240,7 @@ function buildSharePointPayload(record) {
   // Person / Group field
   if (record.personClaims) {
     payload.person = record.personClaims;
-    "person"= "i:0#.f|membership|user@company.com";
+    person= "i:0#.f|membership|user@company.com";
   }
 
   return payload;
