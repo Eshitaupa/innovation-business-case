@@ -670,30 +670,13 @@ const CONFIG = {
     modified:               "Modified"
   },
 
-  // All fields the SP list stores as numbers (sent as strings to avoid PA schema mismatch)
-numberFields: new Set([
-  "costSavings",
-  "efficiencyGain",
-  "paybackMonths",
-  "activeUsers",
-  "adoptionRate",
-  "revenueImpact",
-  "cycleTimeReduction",
-  "productivityUplift",
+  numberFields: new Set([
+    "costSavings", "efficiencyGain", "paybackMonths", "activeUsers",
+    "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift",
+    "toolsPlatformCharges", "licenseCost", "developmentCost",
+    "supportMaintenanceCost", "recurringCostAvoidance", "marginImprovement"
+  ]),
 
-  "scheduleImpact",
-  "goToMarketChannels",
-  "changeManagement",
-
-  "toolsPlatformCharges",
-  "licenseCost",
-  "developmentCost",
-  "supportMaintenanceCost",
-  "recurringCostAvoidance",
-  "marginImprovement",
-
-  "scalabilityNotes"
-]),
 
   fallbackChoices: {
     department: ["OGC"],
