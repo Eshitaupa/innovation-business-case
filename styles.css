@@ -472,10 +472,10 @@ tbody tr:active {
 }
 
 label {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
-
 label span {
   color: #3f4d48;
   font-size: 13px;
@@ -658,6 +658,12 @@ input[type="number"]::-webkit-inner-spin-button {
   max-height: 120px;
   overflow-y: auto;
   border: 1px solid #ccc;
+}
+
+#peoplePicker {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 #peoplePicker input {
   width: 100%;
