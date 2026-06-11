@@ -626,14 +626,10 @@ const CONFIG = {
 
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
 
-  // List Flow — returns items + choices + users in one round-trip
   listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
 
-  // Save Flow — create or update a single item
   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
-  // Maps JS record keys → SharePoint internal field names
-  // NOTE: 'person' (People/Group field) is handled separately — not in this map
   fieldMap: {
     id:                     "Id",
     ideaName:               "Title",
@@ -670,15 +666,26 @@ const CONFIG = {
     modified:               "Modified"
   },
 
-  // These keys are cast to Number before saving
-  numberFields: new Set([
-    "costSavings", "efficiencyGain", "paybackMonths", "activeUsers",
-    "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift",
+  // ── SPLIT: integer fields vs decimal fields ──────────────────────────────
+  // Power Automate schema expects strict Integer for these; send via parseInt.
+  integerFields: new Set([
+    "paybackMonths", "activeUsers",
     "toolsPlatformCharges", "licenseCost", "developmentCost",
-    "supportMaintenanceCost", "recurringCostAvoidance", "marginImprovement"
+    "supportMaintenanceCost", "recurringCostAvoidance"
+  ]),
+  // These may have decimals; send via parseFloat.
+  floatFields: new Set([
+    "costSavings", "efficiencyGain",
+    "adoptionRate", "revenueImpact", "cycleTimeReduction",
+    "productivityUplift", "marginImprovement"
   ]),
 
-  // Used only if the flow fails to return choices
+  // Combined for convenience
+  get numberFields() {
+    const s = new Set([...this.integerFields, ...this.floatFields]);
+    return s;
+  },
+
   fallbackChoices: {
     department: ["OGC"],
     status: ["Intake", "Reviewing", "MVP", "Scaling", "On hold"]
@@ -689,20 +696,20 @@ const CONFIG = {
 // STATE
 // =============================================================================
 const state = {
-  records:      [],          // All mapped records from SharePoint
-  allUsers:     [],          // All site users loaded once on boot — { Title, Email, LoginName }
+  records:      [],
+  allUsers:     [],
   choices:      { department: [], status: [] },
-  mode:         "connecting", // "connecting" | "flow" | "error"
+  mode:         "connecting",
   search:       "",
   statusFilter: "All",
   busy:         false,
   toastTimer:   0,
-  // People picker
-  selectedPerson:    null,   // { displayName, email, claims } — currently selected user
-  peopleDebounce:    0       // setTimeout handle for search debounce
+  selectedPerson: null,
+  // People picker select filter
+  peopleFilterText: ""
 };
 
-const els = {};  // Cached DOM element references
+const els = {};
 
 // =============================================================================
 // BOOT
@@ -712,14 +719,14 @@ document.addEventListener("DOMContentLoaded", init);
 async function init() {
   cacheElements();
   bindEvents();
-  bindPeoplePicker();
   await loadFromFlow();
   populateDropdowns();
+  buildPeopleSelect();   // build the <select> once users are loaded
   render();
 }
 
 // =============================================================================
-// DATA LOAD — single round-trip returns items + choices + users
+// DATA LOAD
 // =============================================================================
 async function loadFromFlow() {
   setBusy(true);
@@ -732,33 +739,25 @@ async function loadFromFlow() {
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data = await res.json();
 
-    // ── Choices (status + department) ───────────────────────────────────
     if (data.choices && Array.isArray(data.choices.status) && data.choices.status.length) {
       state.choices.status     = data.choices.status;
       state.choices.department = Array.isArray(data.choices.department)
         ? data.choices.department
         : CONFIG.fallbackChoices.department;
     } else {
-      // Fallback: derive unique values from existing records
       const rows = extractRows(data);
       state.choices.status     = uniqueChoices(rows, "field_3") || CONFIG.fallbackChoices.status;
       state.choices.department = uniqueChoices(rows, "field_2") || CONFIG.fallbackChoices.department;
-      console.warn("⚠ Choices derived from records — update the flow Response body to return choices.");
     }
 
-    // ── Site users for People Picker ─────────────────────────────────────
-    // Flow must include a 3rd HTTP step:
-    //   GET /_api/web/siteusers?$select=Title,Email,LoginName&$top=200
-    // and return: "users": @{body('Send_an_HTTP_request_to_SharePoint_2')?['d']?['results']}
     if (Array.isArray(data.users)) {
-      state.allUsers = data.users.filter(u => u.Email); // exclude system accounts without email
+      state.allUsers = data.users.filter(u => u.Email);
       console.log(`✓ Loaded ${state.allUsers.length} site users for People Picker`);
     } else {
       state.allUsers = [];
-      console.warn("⚠ No users returned from flow — People Picker will be empty. Add the siteusers HTTP step.");
+      console.warn("⚠ No users returned from flow.");
     }
 
-    // ── Records ──────────────────────────────────────────────────────────
     const rows = extractRows(data);
     state.records = rows.map(mapItem);
     state.mode = "flow";
@@ -775,7 +774,6 @@ async function loadFromFlow() {
   }
 }
 
-// Reload records only (called after save) — preserves existing choices + users
 async function reloadRecords() {
   setBusy(true);
   try {
@@ -811,21 +809,14 @@ function uniqueChoices(rows, field) {
   return vals.length ? vals : null;
 }
 
-// Maps a raw SharePoint item → clean JS record
 function mapItem(item) {
-  // 'person' is a People/Group column — the SP connector returns it as:
-  // { DisplayName, Claims, Email, JobTitle, ... }
   const p = item.person || item.Person || null;
-
   return {
     id:                     item.Id || item.ID || "",
     ideaName:               item.Title || "",
-
-    // Person field — stored as three separate keys for display, save, and search
     personDisplayName:      p?.DisplayName || p?.displayName || "",
     personEmail:            p?.Email       || p?.email       || "",
     personClaims:           p?.Claims      || p?.claims      || "",
-
     department:             choiceText(item.field_2),
     status:                 choiceText(item.field_3) || "Intake",
     problemStatement:       item.field_4  || "",
@@ -861,155 +852,133 @@ function mapItem(item) {
 }
 
 // =============================================================================
-// PEOPLE PICKER
-// Searches state.allUsers client-side — no extra network call needed.
-// Users are loaded once from the List Flow (siteusers endpoint).
+// PEOPLE PICKER  — select + filter input (no floating list, no layout disruption)
 // =============================================================================
-function bindPeoplePicker() {
-  const input    = document.getElementById("personSearch");
-  const list     = document.getElementById("personSuggestions");
-  const chip     = document.getElementById("personSelected");
-  const chipName = document.getElementById("personSelectedName");
-  const clearBtn = document.getElementById("personClearBtn");
 
-  if (!input) return;
+/**
+ * Build (or rebuild) the hidden <select> and inject the filter input above it.
+ * The <select> lives inside #peoplePicker which already has the label in HTML.
+ * We replace whatever is in that container with two elements:
+ *   1. A text <input> for filtering
+ *   2. A <select> showing matched users
+ */
+function buildPeopleSelect() {
+  const container = document.getElementById("peoplePicker");
+  if (!container) return;
 
-  // Search as user types — debounced 200ms
-  input.addEventListener("input", () => {
-    clearTimeout(state.peopleDebounce);
-    const q = input.value.trim();
-    if (q.length < 2) { hideSuggestions(); return; }
-    state.peopleDebounce = setTimeout(() => renderSuggestions(q), 200);
-  });
+  // Wipe the old autocomplete markup
+  container.innerHTML = "";
 
-  // Keyboard navigation inside suggestion list
-  input.addEventListener("keydown", e => {
-    const items  = [...list.querySelectorAll("[role='option']")];
-    const active = list.querySelector("[aria-selected='true']");
-    let idx      = items.indexOf(active);
+  // ── Filter input ────────────────────────────────────────────────────────
+  const filterInput = document.createElement("input");
+  filterInput.type        = "text";
+  filterInput.id          = "personFilterInput";
+  filterInput.placeholder = "Type to filter people…";
+  filterInput.autocomplete = "off";
+  filterInput.setAttribute("aria-label", "Filter people list");
 
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      idx = Math.min(idx + 1, items.length - 1);
-      items.forEach((el, i) => el.setAttribute("aria-selected", i === idx));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      idx = Math.max(idx - 1, 0);
-      items.forEach((el, i) => el.setAttribute("aria-selected", i === idx));
-    } else if (e.key === "Enter") {
-      const sel = list.querySelector("[aria-selected='true']");
-      if (sel) { e.preventDefault(); selectPerson(JSON.parse(sel.dataset.person)); }
-    } else if (e.key === "Escape") {
-      hideSuggestions();
+  // ── Select ──────────────────────────────────────────────────────────────
+  const sel = document.createElement("select");
+  sel.id   = "personSelect";
+  sel.size = 5;           // shows 5 rows; still scrollable for more
+  sel.setAttribute("aria-label", "Select a person");
+  // Show only when there is at least 1 char in the filter
+  sel.style.display = "none";
+
+  container.appendChild(filterInput);
+  container.appendChild(sel);
+
+  // ── Events ───────────────────────────────────────────────────────────────
+  filterInput.addEventListener("input", () => {
+    const q = filterInput.value.trim().toLowerCase();
+    if (q.length < 1) {
+      sel.style.display = "none";
+      sel.innerHTML = "";
+      return;
+    }
+
+    const matches = state.allUsers
+      .filter(u =>
+        (u.Title || "").toLowerCase().includes(q) ||
+        (u.Email || "").toLowerCase().includes(q)
+      )
+      .slice(0, 50);
+
+    sel.innerHTML = matches.length
+      ? matches.map(u =>
+          `<option value="${escAttr(u.LoginName)}"
+            data-name="${escAttr(u.Title)}"
+            data-email="${escAttr(u.Email)}">
+            ${esc(u.Title)} — ${esc(u.Email)}
+          </option>`
+        ).join("")
+      : `<option disabled>No results</option>`;
+
+    sel.style.display = "block";
+    // Re-select if previously selected person still in list
+    if (state.selectedPerson?.claims) {
+      const opt = sel.querySelector(`option[value="${escAttr(state.selectedPerson.claims)}"]`);
+      if (opt) opt.selected = true;
     }
   });
 
-  // Clear selected person and reset to search input
-  clearBtn.addEventListener("click", () => {
-    state.selectedPerson = null;
-    input.value  = "";
-    chip.hidden  = true;
-    input.hidden = false;
-    input.focus();
-    if (els.caseForm?.elements.personClaims) els.caseForm.elements.personClaims.value = "";
-  });
-
-  // Close list when clicking outside the picker
-  document.addEventListener("click", e => {
-    if (!e.target.closest("#peoplePicker")) hideSuggestions();
-  });
-}
-
-// Filter state.allUsers client-side and render the dropdown list
-function renderSuggestions(query) {
-  const list = document.getElementById("personSuggestions");
-  const q    = query.toLowerCase();
-
-  const matches = state.allUsers
-    .filter(u =>
-      (u.Title || "").toLowerCase().includes(q) ||
-      (u.Email || "").toLowerCase().includes(q)
-    )
-    .slice(0, 8); // cap at 8 results
-
-  if (!matches.length) {
-    list.innerHTML = `<li class="people-empty">No users found</li>`;
-    list.hidden    = false;
-    document.getElementById("personSearch").setAttribute("aria-expanded", "true");
-    return;
-  }
-
-  list.innerHTML = matches.map((u, i) => {
-    const person = { displayName: u.Title, email: u.Email, claims: u.LoginName };
-    return `
-      <li role="option" aria-selected="${i === 0}"
-          data-person='${JSON.stringify(person).replace(/'/g, "&#39;")}'>
-        <span class="people-name">${esc(u.Title || "")}</span>
-        <span class="people-email">${esc(u.Email || "")}</span>
-      </li>`;
-  }).join("");
-
-  list.hidden = false;
-  document.getElementById("personSearch").setAttribute("aria-expanded", "true");
-
-  // Click to select
-  list.querySelectorAll("[role='option']").forEach(li => {
-    li.addEventListener("mousedown", e => {
-      e.preventDefault(); // prevent input losing focus before click fires
-      selectPerson(JSON.parse(li.dataset.person));
-    });
+  sel.addEventListener("change", () => {
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt || opt.disabled) return;
+    state.selectedPerson = {
+      displayName: opt.dataset.name,
+      email:       opt.dataset.email,
+      claims:      opt.value
+    };
+    // Write claims to hidden form field
+    if (els.caseForm?.elements.personClaims) {
+      els.caseForm.elements.personClaims.value = opt.value;
+    }
   });
 }
 
-// Commit a user selection — shows chip, hides input, stores claims
-function selectPerson(user) {
-  state.selectedPerson = user;
-
-  const input    = document.getElementById("personSearch");
-  const chip     = document.getElementById("personSelected");
-  const chipName = document.getElementById("personSelectedName");
-
-  chipName.textContent = user.displayName || user.email || "";
-  chip.hidden  = false;
-  input.hidden = true;
-  hideSuggestions();
-
-  // Persist claims to hidden form field so formToRecord() can read it
-  if (els.caseForm?.elements.personClaims) {
-    els.caseForm.elements.personClaims.value = user.claims || "";
-  }
-}
-
-function hideSuggestions() {
-  const list = document.getElementById("personSuggestions");
-  if (list) { list.hidden = true; list.innerHTML = ""; }
-  const input = document.getElementById("personSearch");
-  if (input) input.setAttribute("aria-expanded", "false");
-}
-
-// Pre-fill picker when editing an existing record
+/** Pre-fill picker when editing a record */
 function fillPersonPicker(record) {
-  if (!record.personDisplayName) return;
-  selectPerson({
+  const filterInput = document.getElementById("personFilterInput");
+  const sel         = document.getElementById("personSelect");
+  if (!filterInput || !sel || !record.personDisplayName) return;
+
+  state.selectedPerson = {
     displayName: record.personDisplayName,
     email:       record.personEmail,
     claims:      record.personClaims
-  });
+  };
+
+  // Show the name in the filter box so the user sees who is selected
+  filterInput.value = record.personDisplayName;
+
+  // Populate select with just this user so it shows as selected
+  sel.innerHTML = `<option value="${escAttr(record.personClaims)}"
+    data-name="${escAttr(record.personDisplayName)}"
+    data-email="${escAttr(record.personEmail)}" selected>
+    ${esc(record.personDisplayName)} — ${esc(record.personEmail)}
+  </option>`;
+  sel.style.display = "block";
+
+  if (els.caseForm?.elements.personClaims) {
+    els.caseForm.elements.personClaims.value = record.personClaims;
+  }
 }
 
-// Clear picker back to empty search state
+/** Reset picker to empty state */
 function resetPersonPicker() {
   state.selectedPerson = null;
-  const input = document.getElementById("personSearch");
-  const chip  = document.getElementById("personSelected");
-  if (input) { input.value = ""; input.hidden = false; }
-  if (chip)  { chip.hidden = true; }
-  hideSuggestions();
-  if (els.caseForm?.elements.personClaims) els.caseForm.elements.personClaims.value = "";
+  const filterInput = document.getElementById("personFilterInput");
+  const sel         = document.getElementById("personSelect");
+  if (filterInput) filterInput.value = "";
+  if (sel)  { sel.innerHTML = ""; sel.style.display = "none"; }
+  if (els.caseForm?.elements.personClaims) {
+    els.caseForm.elements.personClaims.value = "";
+  }
 }
 
 // =============================================================================
-// DROPDOWNS  (status + department — populated from live SharePoint choices)
+// DROPDOWNS
 // =============================================================================
 function populateDropdowns() {
   const deptSel    = document.querySelector('select[name="department"]');
@@ -1078,7 +1047,6 @@ function bindEvents() {
     if (e.key === "Escape" && els.drawer.classList.contains("open")) closeDrawer();
   });
 
-  // Stop scroll from accidentally changing number inputs
   document.addEventListener("wheel", e => {
     if (document.activeElement.type === "number") e.preventDefault();
   }, { passive: false });
@@ -1166,13 +1134,11 @@ function openDrawer(record = null) {
   els.drawerTitle.textContent = record ? "Edit innovation case" : "New innovation case";
 
   if (record) {
-    // Populate all standard form fields from the record
     Object.keys(CONFIG.fieldMap).forEach(key => {
       const ctrl = els.caseForm.elements[key];
       if (ctrl && record[key] != null) ctrl.value = record[key];
     });
     els.caseForm.elements.id.value = record.id;
-    // Pre-fill people picker
     fillPersonPicker(record);
   } else {
     els.caseForm.elements.id.value = "";
@@ -1234,52 +1200,76 @@ async function saveViaFlow(record) {
 
   let text = "";
   try { text = await res.text(); } catch {}
-  if (!res.ok) throw new Error(`HTTP ${res.status}${text ? ": " + text : ""}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
   try { return text ? JSON.parse(text) : {}; } catch { return {}; }
 }
 
-// Builds the JSON payload sent to the Save Flow
+/**
+ * Build the JSON payload for the Save Flow.
+ *
+ * FIX for HTTP 400 TriggerInputSchemaMismatch:
+ *   Power Automate's schema expects strict Integer/Number types.
+ *   We now use parseInt() for integer fields and parseFloat() for decimal
+ *   fields, and skip any field whose value is blank / NaN so we never send
+ *   a string where the schema expects a number.
+ */
 function buildSharePointPayload(record) {
   const payload = {
     operation: record.id ? "update" : "create",
     id:        record.id ? String(record.id) : ""
   };
 
-  // Map all standard text + number fields
   Object.entries(CONFIG.fieldMap).forEach(([jsKey, spField]) => {
     if (["created", "modified", "id"].includes(jsKey)) return;
-    const val = record[jsKey];
-    if (val === "" || val == null) return;
 
-    if (CONFIG.numberFields.has(jsKey)) {
-      const n = Number(val);
-      if (!isNaN(n)) payload[spField] = n;
+    const val = record[jsKey];
+
+    if (CONFIG.integerFields.has(jsKey)) {
+      // Must be a whole integer — skip if empty
+      if (val === "" || val == null) return;
+      const n = parseInt(val, 10);
+      if (isNaN(n)) return;
+      payload[spField] = n;
+
+    } else if (CONFIG.floatFields.has(jsKey)) {
+      // Decimal-safe number — skip if empty
+      if (val === "" || val == null) return;
+      const n = parseFloat(val);
+      if (isNaN(n)) return;
+      payload[spField] = n;
+
     } else {
-      payload[spField] = String(val).trim();
+      // Text field — skip if empty
+      const s = String(val ?? "").trim();
+      if (s === "") return;
+      payload[spField] = s;
     }
   });
 
-  // Person field — sent as Claims string (LoginName) under the SP internal field name "person"
-  // The Save Flow must map this to the People column using the Claims value.
-  // Example Claims: "i:0#.f|membership|user@burnsmcd.com"
+  // People/Group field
   if (record.personClaims) {
-    payload["person"]              = record.personClaims;
-    payload["personDisplayName"]   = record.personDisplayName || ""; // for flow logging / reference
+    payload["person"]            = record.personClaims;
+    payload["personDisplayName"] = record.personDisplayName || "";
   }
 
   return payload;
 }
 
-// Reads FormData → clean JS record with correct types
+/** Reads FormData → clean JS record */
 function formToRecord(fd) {
   const rec = {};
 
   Object.keys(CONFIG.fieldMap).forEach(key => {
     if (["created", "modified"].includes(key)) return;
     const val = fd.get(key);
-    rec[key] = CONFIG.numberFields.has(key)
-      ? (val === "" || val == null ? null : Number(val))
-      : (val == null ? "" : String(val).trim());
+
+    if (CONFIG.integerFields.has(key)) {
+      rec[key] = (val === "" || val == null) ? null : parseInt(val, 10);
+    } else if (CONFIG.floatFields.has(key)) {
+      rec[key] = (val === "" || val == null) ? null : parseFloat(val);
+    } else {
+      rec[key] = val == null ? "" : String(val).trim();
+    }
   });
 
   rec.id                = fd.get("id") || "";
@@ -1360,14 +1350,12 @@ function showToast(msg) {
   state.toastTimer = setTimeout(() => els.toast.classList.remove("show"), 3800);
 }
 
-// Return 0 for any blank / non-numeric value
 function numOrZero(v) {
   return v === "" || v == null || isNaN(Number(v)) ? 0 : Number(v);
 }
 
-// Extract display string from a SharePoint choice object or plain string
 function choiceText(v) {
-  if (v == null)           return "";
+  if (v == null)             return "";
   if (typeof v === "string") return v;
   if (typeof v === "object") return v.Value || v.value || v.Label || v.label || "";
   return String(v);

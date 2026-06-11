@@ -481,7 +481,51 @@ label span {
   font-size: 13px;
   font-weight: 700;
 }
-
+.people-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+ 
+/* Filter text input — identical look to every other form <input> */
+#personFilterInput {
+  width: 100%;
+  box-sizing: border-box;
+}
+ 
+/* The <select> list — shown only when filter has content */
+#personSelect {
+  width: 100%;
+  box-sizing: border-box;
+  /* size="5" is set in JS; respect it without a fixed height */
+  min-height: 0;
+  /* Use the same border/radius/font as other controls */
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: var(--radius, 6px);
+  font-size: inherit;
+  font-family: inherit;
+  padding: 2px 4px;
+  background: var(--surface, #fff);
+  color: var(--text, #111827);
+  cursor: pointer;
+}
+ 
+#personSelect option {
+  padding: 4px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+ 
+#personSelect option:checked,
+#personSelect option:focus {
+  background: var(--primary, #1e3a5f);
+  color: #fff;
+}
+ 
+/* Remove the old floating suggestion list styles if present */
+.peoples-suggestions { display: none !important; }
+.person-selected     { display: none !important; }
 input,
 select,
 textarea {
