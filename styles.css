@@ -654,3 +654,12 @@ input[type="number"]::-webkit-inner-spin-button {
 } 
 
 
+#peoplePicker input {
+  width: 100%;
+  padding: 6px;
+}
+
+#peoplePicker select {
+  margin-top: 5px;
+  border: 1px solid #ccc;
+}
