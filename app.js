@@ -618,26 +618,25 @@
 //   const t = v == null ? "" : String(v);
 //   return `"${t.replace(/"/g, '""')}"`;
 // }
-
+// =============================================================================
+// CONFIG
+// =============================================================================
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
-  storageKey: "ogcInnovationBusinessCases.v1",
 
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
 
+  // List Flow — returns items + choices + users in one round-trip
   listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
 
+  // Save Flow — create or update a single item
   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
-  // Flow that searches SharePoint users — returns array of { displayName, email, claims }
-  // You need to create this flow (see documentation for setup)
-  peopleSearchFlowUrl: "PASTE_YOUR_PEOPLE_SEARCH_FLOW_URL_HERE",
-
+  // Maps JS record keys → SharePoint internal field names
+  // NOTE: 'person' (People/Group field) is handled separately — not in this map
   fieldMap: {
     id:                     "Id",
     ideaName:               "Title",
-    // 'person' is a SharePoint People/Group column (internal name: person)
-    // It is handled separately from text fields — see buildSharePointPayload()
     department:             "field_2",
     status:                 "field_3",
     problemStatement:       "field_4",
@@ -671,6 +670,7 @@ const CONFIG = {
     modified:               "Modified"
   },
 
+  // These keys are cast to Number before saving
   numberFields: new Set([
     "costSavings", "efficiencyGain", "paybackMonths", "activeUsers",
     "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift",
@@ -678,34 +678,35 @@ const CONFIG = {
     "supportMaintenanceCost", "recurringCostAvoidance", "marginImprovement"
   ]),
 
+  // Used only if the flow fails to return choices
   fallbackChoices: {
     department: ["OGC"],
     status: ["Intake", "Reviewing", "MVP", "Scaling", "On hold"]
   }
 };
 
-// ---------------------------------------------------------------------------
+// =============================================================================
 // STATE
-// ---------------------------------------------------------------------------
+// =============================================================================
 const state = {
-  records: [],
-  choices: { department: [], status: [] },
-  mode: "connecting",
-  search: "",
+  records:      [],          // All mapped records from SharePoint
+  allUsers:     [],          // All site users loaded once on boot — { Title, Email, LoginName }
+  choices:      { department: [], status: [] },
+  mode:         "connecting", // "connecting" | "flow" | "error"
+  search:       "",
   statusFilter: "All",
-  busy: false,
-  toastTimer: 0,
-  // People picker state
-  peopleSuggestions: [],
-  selectedPerson: null,   // { displayName, email, claims }
-  peopleSearchTimer: 0
+  busy:         false,
+  toastTimer:   0,
+  // People picker
+  selectedPerson:    null,   // { displayName, email, claims } — currently selected user
+  peopleDebounce:    0       // setTimeout handle for search debounce
 };
 
-const els = {};
+const els = {};  // Cached DOM element references
 
-// ---------------------------------------------------------------------------
+// =============================================================================
 // BOOT
-// ---------------------------------------------------------------------------
+// =============================================================================
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
@@ -717,58 +718,75 @@ async function init() {
   render();
 }
 
-// ---------------------------------------------------------------------------
-// MAIN DATA LOAD
-// ---------------------------------------------------------------------------
+// =============================================================================
+// DATA LOAD — single round-trip returns items + choices + users
+// =============================================================================
 async function loadFromFlow() {
   setBusy(true);
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({})
+      body:    JSON.stringify({})
     });
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data = await res.json();
 
+    // ── Choices (status + department) ───────────────────────────────────
     if (data.choices && Array.isArray(data.choices.status) && data.choices.status.length) {
       state.choices.status     = data.choices.status;
       state.choices.department = Array.isArray(data.choices.department)
         ? data.choices.department
         : CONFIG.fallbackChoices.department;
     } else {
+      // Fallback: derive unique values from existing records
       const rows = extractRows(data);
       state.choices.status     = uniqueChoices(rows, "field_3") || CONFIG.fallbackChoices.status;
       state.choices.department = uniqueChoices(rows, "field_2") || CONFIG.fallbackChoices.department;
+      console.warn("⚠ Choices derived from records — update the flow Response body to return choices.");
     }
 
+    // ── Site users for People Picker ─────────────────────────────────────
+    // Flow must include a 3rd HTTP step:
+    //   GET /_api/web/siteusers?$select=Title,Email,LoginName&$top=200
+    // and return: "users": @{body('Send_an_HTTP_request_to_SharePoint_2')?['d']?['results']}
+    if (Array.isArray(data.users)) {
+      state.allUsers = data.users.filter(u => u.Email); // exclude system accounts without email
+      console.log(`✓ Loaded ${state.allUsers.length} site users for People Picker`);
+    } else {
+      state.allUsers = [];
+      console.warn("⚠ No users returned from flow — People Picker will be empty. Add the siteusers HTTP step.");
+    }
+
+    // ── Records ──────────────────────────────────────────────────────────
     const rows = extractRows(data);
     state.records = rows.map(mapItem);
     state.mode = "flow";
 
   } catch (err) {
     console.error("Flow load failed:", err);
-    state.records = [];
-    state.choices = { ...CONFIG.fallbackChoices };
-    state.mode = "error";
+    state.records  = [];
+    state.allUsers = [];
+    state.choices  = { ...CONFIG.fallbackChoices };
+    state.mode     = "error";
     showToast("⚠ Could not load SharePoint data — " + err.message);
   } finally {
     setBusy(false);
   }
 }
 
+// Reload records only (called after save) — preserves existing choices + users
 async function reloadRecords() {
   setBusy(true);
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({})
+      body:    JSON.stringify({})
     });
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data = await res.json();
-    const rows = extractRows(data);
-    state.records = rows.map(mapItem);
+    state.records = extractRows(data).map(mapItem);
     state.mode = "flow";
   } catch (err) {
     console.error("Reload failed:", err);
@@ -778,13 +796,13 @@ async function reloadRecords() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// HELPERS — data extraction
-// ---------------------------------------------------------------------------
+// =============================================================================
+// DATA HELPERS
+// =============================================================================
 function extractRows(data) {
-  if (Array.isArray(data))        return data;
-  if (Array.isArray(data.items))  return data.items;
-  if (Array.isArray(data.value))  return data.value;
+  if (Array.isArray(data))       return data;
+  if (Array.isArray(data.items)) return data.items;
+  if (Array.isArray(data.value)) return data.value;
   return [];
 }
 
@@ -793,19 +811,21 @@ function uniqueChoices(rows, field) {
   return vals.length ? vals : null;
 }
 
+// Maps a raw SharePoint item → clean JS record
 function mapItem(item) {
-  // 'person' is a SharePoint People field — it comes back as an object
-  // { DisplayName, Claims, Email } via the SP connector
-  const personField = item.person || item.Person || null;
+  // 'person' is a People/Group column — the SP connector returns it as:
+  // { DisplayName, Claims, Email, JobTitle, ... }
+  const p = item.person || item.Person || null;
 
   return {
-    id:                     item.Id   || item.ID   || "",
+    id:                     item.Id || item.ID || "",
     ideaName:               item.Title || "",
-    // person display name shown in the table
-    personDisplayName:      personField?.DisplayName || personField?.displayName || "",
-    // claims string needed to re-save the person field
-    personClaims:           personField?.Claims || personField?.claims || "",
-    personEmail:            personField?.Email || personField?.email || "",
+
+    // Person field — stored as three separate keys for display, save, and search
+    personDisplayName:      p?.DisplayName || p?.displayName || "",
+    personEmail:            p?.Email       || p?.email       || "",
+    personClaims:           p?.Claims      || p?.claims      || "",
+
     department:             choiceText(item.field_2),
     status:                 choiceText(item.field_3) || "Intake",
     problemStatement:       item.field_4  || "",
@@ -840,145 +860,136 @@ function mapItem(item) {
   };
 }
 
-// ---------------------------------------------------------------------------
+// =============================================================================
 // PEOPLE PICKER
-// ---------------------------------------------------------------------------
+// Searches state.allUsers client-side — no extra network call needed.
+// Users are loaded once from the List Flow (siteusers endpoint).
+// =============================================================================
 function bindPeoplePicker() {
-  const input       = document.getElementById("personSearch");
-  const suggestions = document.getElementById("personSuggestions");
-  const selected    = document.getElementById("personSelected");
-  const selectedName= document.getElementById("personSelectedName");
-  const clearBtn    = document.getElementById("personClearBtn");
+  const input    = document.getElementById("personSearch");
+  const list     = document.getElementById("personSuggestions");
+  const chip     = document.getElementById("personSelected");
+  const chipName = document.getElementById("personSelectedName");
+  const clearBtn = document.getElementById("personClearBtn");
 
   if (!input) return;
 
+  // Search as user types — debounced 200ms
   input.addEventListener("input", () => {
-    clearTimeout(state.peopleSearchTimer);
+    clearTimeout(state.peopleDebounce);
     const q = input.value.trim();
-    if (q.length < 2) {
-      hideSuggestions();
-      return;
-    }
-    // Debounce 350ms
-    state.peopleSearchTimer = setTimeout(() => searchPeople(q), 350);
+    if (q.length < 2) { hideSuggestions(); return; }
+    state.peopleDebounce = setTimeout(() => renderSuggestions(q), 200);
   });
 
+  // Keyboard navigation inside suggestion list
   input.addEventListener("keydown", e => {
-    const items = suggestions.querySelectorAll("[role='option']");
-    const active = suggestions.querySelector("[aria-selected='true']");
-    let idx = [...items].indexOf(active);
+    const items  = [...list.querySelectorAll("[role='option']")];
+    const active = list.querySelector("[aria-selected='true']");
+    let idx      = items.indexOf(active);
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
       idx = Math.min(idx + 1, items.length - 1);
-      items.forEach((el, i) => el.setAttribute("aria-selected", i === idx ? "true" : "false"));
+      items.forEach((el, i) => el.setAttribute("aria-selected", i === idx));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       idx = Math.max(idx - 1, 0);
-      items.forEach((el, i) => el.setAttribute("aria-selected", i === idx ? "true" : "false"));
-    } else if (e.key === "Enter" && active) {
-      e.preventDefault();
-      selectPerson(JSON.parse(active.dataset.person));
+      items.forEach((el, i) => el.setAttribute("aria-selected", i === idx));
+    } else if (e.key === "Enter") {
+      const sel = list.querySelector("[aria-selected='true']");
+      if (sel) { e.preventDefault(); selectPerson(JSON.parse(sel.dataset.person)); }
     } else if (e.key === "Escape") {
       hideSuggestions();
     }
   });
 
+  // Clear selected person and reset to search input
   clearBtn.addEventListener("click", () => {
     state.selectedPerson = null;
-    input.value = "";
-    selected.hidden = true;
+    input.value  = "";
+    chip.hidden  = true;
     input.hidden = false;
     input.focus();
-    // Clear hidden fields
-    els.caseForm.elements.personClaims.value = "";
+    if (els.caseForm?.elements.personClaims) els.caseForm.elements.personClaims.value = "";
   });
 
-  // Close suggestions on outside click
+  // Close list when clicking outside the picker
   document.addEventListener("click", e => {
     if (!e.target.closest("#peoplePicker")) hideSuggestions();
   });
 }
 
-async function searchPeople(query) {
-  const suggestions = document.getElementById("personSuggestions");
+// Filter state.allUsers client-side and render the dropdown list
+function renderSuggestions(query) {
+  const list = document.getElementById("personSuggestions");
+  const q    = query.toLowerCase();
 
-  // Show loading state
-  suggestions.innerHTML = `<li class="people-loading">Searching...</li>`;
-  suggestions.hidden = false;
+  const matches = state.allUsers
+    .filter(u =>
+      (u.Title || "").toLowerCase().includes(q) ||
+      (u.Email || "").toLowerCase().includes(q)
+    )
+    .slice(0, 8); // cap at 8 results
+
+  if (!matches.length) {
+    list.innerHTML = `<li class="people-empty">No users found</li>`;
+    list.hidden    = false;
+    document.getElementById("personSearch").setAttribute("aria-expanded", "true");
+    return;
+  }
+
+  list.innerHTML = matches.map((u, i) => {
+    const person = { displayName: u.Title, email: u.Email, claims: u.LoginName };
+    return `
+      <li role="option" aria-selected="${i === 0}"
+          data-person='${JSON.stringify(person).replace(/'/g, "&#39;")}'>
+        <span class="people-name">${esc(u.Title || "")}</span>
+        <span class="people-email">${esc(u.Email || "")}</span>
+      </li>`;
+  }).join("");
+
+  list.hidden = false;
   document.getElementById("personSearch").setAttribute("aria-expanded", "true");
 
-  try {
-    const res = await fetch(CONFIG.peopleSearchFlowUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query })
+  // Click to select
+  list.querySelectorAll("[role='option']").forEach(li => {
+    li.addEventListener("mousedown", e => {
+      e.preventDefault(); // prevent input losing focus before click fires
+      selectPerson(JSON.parse(li.dataset.person));
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-
-    // Flow should return { users: [{ displayName, email, claims }, ...] }
-    const users = Array.isArray(data.users) ? data.users :
-                  Array.isArray(data)        ? data       : [];
-
-    if (!users.length) {
-      suggestions.innerHTML = `<li class="people-empty">No users found</li>`;
-      return;
-    }
-
-    suggestions.innerHTML = users.map((u, i) => `
-      <li role="option" aria-selected="${i === 0 ? 'true' : 'false'}"
-          data-person='${JSON.stringify(u).replace(/'/g, "&#39;")}'>
-        <span class="people-name">${esc(u.displayName || u.DisplayName || "")}</span>
-        <span class="people-email">${esc(u.email || u.Email || "")}</span>
-      </li>
-    `).join("");
-
-    suggestions.querySelectorAll("[role='option']").forEach(li => {
-      li.addEventListener("mousedown", e => {
-        e.preventDefault(); // prevent input blur
-        selectPerson(JSON.parse(li.dataset.person));
-      });
-    });
-
-  } catch (err) {
-    console.error("People search failed:", err);
-    suggestions.innerHTML = `<li class="people-empty">Search unavailable</li>`;
-  }
+  });
 }
 
+// Commit a user selection — shows chip, hides input, stores claims
 function selectPerson(user) {
   state.selectedPerson = user;
 
-  const input        = document.getElementById("personSearch");
-  const selected     = document.getElementById("personSelected");
-  const selectedName = document.getElementById("personSelectedName");
+  const input    = document.getElementById("personSearch");
+  const chip     = document.getElementById("personSelected");
+  const chipName = document.getElementById("personSelectedName");
 
-  // Show selected chip, hide input
-  selectedName.textContent = user.displayName || user.DisplayName || user.email || "";
-  selected.hidden = false;
-  input.hidden    = true;
+  chipName.textContent = user.displayName || user.email || "";
+  chip.hidden  = false;
+  input.hidden = true;
   hideSuggestions();
 
-  // Store claims in hidden field for save
-  els.caseForm.elements.personClaims.value = user.claims || user.Claims || "";
+  // Persist claims to hidden form field so formToRecord() can read it
+  if (els.caseForm?.elements.personClaims) {
+    els.caseForm.elements.personClaims.value = user.claims || "";
+  }
 }
 
 function hideSuggestions() {
-  const suggestions = document.getElementById("personSuggestions");
-  if (suggestions) {
-    suggestions.hidden = true;
-    suggestions.innerHTML = "";
-  }
+  const list = document.getElementById("personSuggestions");
+  if (list) { list.hidden = true; list.innerHTML = ""; }
   const input = document.getElementById("personSearch");
   if (input) input.setAttribute("aria-expanded", "false");
 }
 
-// Pre-fill people picker when editing an existing record
+// Pre-fill picker when editing an existing record
 function fillPersonPicker(record) {
   if (!record.personDisplayName) return;
-
-  // Simulate a selected person from the saved record data
   selectPerson({
     displayName: record.personDisplayName,
     email:       record.personEmail,
@@ -986,67 +997,67 @@ function fillPersonPicker(record) {
   });
 }
 
-// Reset people picker when drawer closes / new case opens
+// Clear picker back to empty search state
 function resetPersonPicker() {
   state.selectedPerson = null;
-  const input       = document.getElementById("personSearch");
-  const selected    = document.getElementById("personSelected");
-  if (input)    { input.value = ""; input.hidden = false; }
-  if (selected) { selected.hidden = true; }
+  const input = document.getElementById("personSearch");
+  const chip  = document.getElementById("personSelected");
+  if (input) { input.value = ""; input.hidden = false; }
+  if (chip)  { chip.hidden = true; }
   hideSuggestions();
   if (els.caseForm?.elements.personClaims) els.caseForm.elements.personClaims.value = "";
 }
 
-// ---------------------------------------------------------------------------
-// DROPDOWNS
-// ---------------------------------------------------------------------------
+// =============================================================================
+// DROPDOWNS  (status + department — populated from live SharePoint choices)
+// =============================================================================
 function populateDropdowns() {
-  const deptSelect   = document.querySelector('select[name="department"]');
-  const formStatus   = document.querySelector('select[name="status"]');
-  const filterStatus = document.getElementById("statusFilter");
+  const deptSel    = document.querySelector('select[name="department"]');
+  const statusSel  = document.querySelector('select[name="status"]');
+  const statusFilt = document.getElementById("statusFilter");
 
-  if (deptSelect)   deptSelect.innerHTML   = "";
-  if (formStatus)   formStatus.innerHTML   = "";
-  if (filterStatus) filterStatus.innerHTML = '<option value="All">All statuses</option>';
+  if (deptSel)    deptSel.innerHTML    = "";
+  if (statusSel)  statusSel.innerHTML  = "";
+  if (statusFilt) statusFilt.innerHTML = '<option value="All">All statuses</option>';
 
-  state.choices.department.forEach(choice => {
-    if (!choice) return;
-    const opt = document.createElement("option");
-    opt.value = opt.textContent = choice;
-    deptSelect?.appendChild(opt);
+  state.choices.department.forEach(c => {
+    if (!c) return;
+    const o = document.createElement("option");
+    o.value = o.textContent = c;
+    deptSel?.appendChild(o);
   });
 
-  state.choices.status.forEach(choice => {
-    if (!choice) return;
-    const o1 = document.createElement("option");
-    o1.value = o1.textContent = choice;
-    formStatus?.appendChild(o1);
-    const o2 = document.createElement("option");
-    o2.value = o2.textContent = choice;
-    filterStatus?.appendChild(o2);
+  state.choices.status.forEach(c => {
+    if (!c) return;
+    const o1 = document.createElement("option"); o1.value = o1.textContent = c;
+    const o2 = document.createElement("option"); o2.value = o2.textContent = c;
+    statusSel?.appendChild(o1);
+    statusFilt?.appendChild(o2);
   });
 }
 
-// ---------------------------------------------------------------------------
-// ELEMENT CACHE & EVENTS
-// ---------------------------------------------------------------------------
+// =============================================================================
+// DOM CACHE & EVENTS
+// =============================================================================
 function cacheElements() {
   [
     "connectionBadge", "refreshButton", "exportButton", "newCaseButton",
-    "caseRows", "searchInput", "statusFilter", "summaryTotal", "summarySavings",
-    "summaryEfficiency", "summaryPayback", "drawerBackdrop", "closeDrawerButton",
-    "cancelButton", "caseForm", "drawerTitle", "saveButton", "toast"
+    "caseRows", "searchInput", "statusFilter",
+    "summaryTotal", "summarySavings", "summaryEfficiency", "summaryPayback",
+    "drawerBackdrop", "closeDrawerButton", "cancelButton",
+    "caseForm", "drawerTitle", "saveButton", "toast"
   ].forEach(id => els[id] = document.getElementById(id));
+
   els.drawer = document.getElementById("caseDrawer");
 }
 
 function bindEvents() {
-  els.newCaseButton.addEventListener("click", () => openDrawer());
+  els.newCaseButton.addEventListener("click",  () => openDrawer());
   els.closeDrawerButton.addEventListener("click", closeDrawer);
-  els.cancelButton.addEventListener("click", closeDrawer);
+  els.cancelButton.addEventListener("click",   closeDrawer);
   els.drawerBackdrop.addEventListener("click", closeDrawer);
-  els.exportButton.addEventListener("click", exportCsv);
-  els.caseForm.addEventListener("submit", saveCurrentCase);
+  els.exportButton.addEventListener("click",   exportCsv);
+  els.caseForm.addEventListener("submit",      saveCurrentCase);
 
   els.searchInput.addEventListener("input", e => {
     state.search = e.target.value.trim().toLowerCase();
@@ -1067,14 +1078,15 @@ function bindEvents() {
     if (e.key === "Escape" && els.drawer.classList.contains("open")) closeDrawer();
   });
 
+  // Stop scroll from accidentally changing number inputs
   document.addEventListener("wheel", e => {
     if (document.activeElement.type === "number") e.preventDefault();
   }, { passive: false });
 }
 
-// ---------------------------------------------------------------------------
+// =============================================================================
 // RENDER
-// ---------------------------------------------------------------------------
+// =============================================================================
 function render() {
   renderBadge();
   renderSummaries();
@@ -1083,13 +1095,8 @@ function render() {
 
 function renderBadge() {
   const b = els.connectionBadge;
-  if (state.mode === "flow") {
-    b.textContent = "Power Automate connected";
-    b.classList.remove("warning");
-  } else {
-    b.textContent = "⚠ Flow unavailable";
-    b.classList.add("warning");
-  }
+  b.textContent = state.mode === "flow" ? "Power Automate connected" : "⚠ Flow unavailable";
+  b.classList.toggle("warning", state.mode !== "flow");
 }
 
 function renderSummaries() {
@@ -1113,9 +1120,9 @@ function renderTable() {
   els.caseRows.innerHTML = rows.map(r => `
     <tr>
       <td class="idea-cell">${esc(r.ideaName || "Untitled case")}</td>
-      <td><span class="status-pill" data-status="${esc(r.status || "Intake")}">${esc(r.status || "Intake")}</span></td>
-      <td>${esc(r.personDisplayName || "")}</td>
-      <td class="text-cell">${esc(r.valueProposition || "")}</td>
+      <td><span class="status-pill" data-status="${esc(r.status)}">${esc(r.status)}</span></td>
+      <td>${esc(r.personDisplayName)}</td>
+      <td class="text-cell">${esc(r.valueProposition)}</td>
       <td class="number-cell">${fmt$(r.costSavings)}</td>
       <td class="number-cell">${fmtPct(r.efficiencyGain)}</td>
       <td class="number-cell">${fmtMo(r.paybackMonths)}</td>
@@ -1129,8 +1136,7 @@ function renderTable() {
           <svg><use href="#icon-edit"></use></svg>
         </button>
       </td>
-    </tr>
-  `).join("");
+    </tr>`).join("");
 
   els.caseRows.querySelectorAll("[data-edit-id]").forEach(btn =>
     btn.addEventListener("click", () => {
@@ -1145,35 +1151,33 @@ function filtered() {
   return [...state.records]
     .filter(r => state.statusFilter === "All" || r.status === state.statusFilter)
     .filter(r => !q || [
-      r.ideaName, r.personDisplayName, r.department, r.status,
-      r.problemStatement, r.valueProposition, r.proposedSolution
+      r.ideaName, r.personDisplayName, r.personEmail,
+      r.department, r.status, r.problemStatement, r.valueProposition
     ].some(v => String(v || "").toLowerCase().includes(q)))
     .sort((a, b) => new Date(b.modified || b.created || 0) - new Date(a.modified || a.created || 0));
 }
 
-// ---------------------------------------------------------------------------
+// =============================================================================
 // DRAWER
-// ---------------------------------------------------------------------------
+// =============================================================================
 function openDrawer(record = null) {
   els.caseForm.reset();
   resetPersonPicker();
   els.drawerTitle.textContent = record ? "Edit innovation case" : "New innovation case";
 
   if (record) {
-    // Fill standard form fields
+    // Populate all standard form fields from the record
     Object.keys(CONFIG.fieldMap).forEach(key => {
       const ctrl = els.caseForm.elements[key];
       if (ctrl && record[key] != null) ctrl.value = record[key];
     });
     els.caseForm.elements.id.value = record.id;
-
-    // Fill people picker
-    if (record.personDisplayName) fillPersonPicker(record);
-
+    // Pre-fill people picker
+    fillPersonPicker(record);
   } else {
+    els.caseForm.elements.id.value = "";
     const firstStatus = state.choices.status[0] || "Intake";
     if (els.caseForm.elements.status) els.caseForm.elements.status.value = firstStatus;
-    els.caseForm.elements.id.value = "";
   }
 
   els.drawerBackdrop.hidden = false;
@@ -1189,9 +1193,9 @@ function closeDrawer() {
   resetPersonPicker();
 }
 
-// ---------------------------------------------------------------------------
+// =============================================================================
 // SAVE
-// ---------------------------------------------------------------------------
+// =============================================================================
 async function saveCurrentCase(e) {
   e.preventDefault();
   const record = formToRecord(new FormData(els.caseForm));
@@ -1223,97 +1227,117 @@ async function saveViaFlow(record) {
   console.log("Saving payload:", payload);
 
   const res = await fetch(CONFIG.saveFlowUrl, {
-    method: "POST",
+    method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body:    JSON.stringify(payload)
   });
 
-  let responseText = "";
-  try { responseText = await res.text(); } catch {}
-  if (!res.ok) throw new Error(`HTTP ${res.status}${responseText ? ": " + responseText : ""}`);
-  try { return responseText ? JSON.parse(responseText) : {}; }
-  catch { return {}; }
+  let text = "";
+  try { text = await res.text(); } catch {}
+  if (!res.ok) throw new Error(`HTTP ${res.status}${text ? ": " + text : ""}`);
+  try { return text ? JSON.parse(text) : {}; } catch { return {}; }
 }
 
+// Builds the JSON payload sent to the Save Flow
 function buildSharePointPayload(record) {
   const payload = {
     operation: record.id ? "update" : "create",
-    id: record.id ? String(record.id) : ""
+    id:        record.id ? String(record.id) : ""
   };
 
-  // Standard fields via fieldMap
+  // Map all standard text + number fields
   Object.entries(CONFIG.fieldMap).forEach(([jsKey, spField]) => {
     if (["created", "modified", "id"].includes(jsKey)) return;
-
     const val = record[jsKey];
-    if (val === "" || val === null || val === undefined) return;
+    if (val === "" || val == null) return;
 
     if (CONFIG.numberFields.has(jsKey)) {
-      const num = Number(val);
-      if (!Number.isNaN(num)) payload[spField] = num;
+      const n = Number(val);
+      if (!isNaN(n)) payload[spField] = n;
     } else {
       payload[spField] = String(val).trim();
     }
   });
 
-  // Person field — send as Claims string under the field's internal name
-  // Your Save Flow must handle this as a People field update
+  // Person field — sent as Claims string (LoginName) under the SP internal field name "person"
+  // The Save Flow must map this to the People column using the Claims value.
+  // Example Claims: "i:0#.f|membership|user@burnsmcd.com"
   if (record.personClaims) {
-    payload["person"] = record.personClaims;        // Claims string e.g. "i:0#.f|membership|user@company.com"
-    payload["personDisplayName"] = record.personDisplayName || "";  // optional, for reference
+    payload["person"]              = record.personClaims;
+    payload["personDisplayName"]   = record.personDisplayName || ""; // for flow logging / reference
   }
 
   return payload;
 }
 
+// Reads FormData → clean JS record with correct types
 function formToRecord(fd) {
   const rec = {};
+
   Object.keys(CONFIG.fieldMap).forEach(key => {
     if (["created", "modified"].includes(key)) return;
     const val = fd.get(key);
     rec[key] = CONFIG.numberFields.has(key)
-      ? (val === "" || val === null ? null : Number(val))
-      : (val === null ? "" : String(val).trim());
+      ? (val === "" || val == null ? null : Number(val))
+      : (val == null ? "" : String(val).trim());
   });
-  rec.id               = fd.get("id") || "";
-  rec.status           = rec.status || state.choices.status[0] || "Intake";
-  // People picker stores claims in a hidden field
-  rec.personClaims     = fd.get("personClaims") || "";
-  rec.personDisplayName= state.selectedPerson?.displayName || state.selectedPerson?.DisplayName || "";
+
+  rec.id                = fd.get("id") || "";
+  rec.status            = rec.status || state.choices.status[0] || "Intake";
+  rec.personClaims      = fd.get("personClaims") || "";
+  rec.personDisplayName = state.selectedPerson?.displayName || state.selectedPerson?.DisplayName || "";
+  rec.personEmail       = state.selectedPerson?.email       || state.selectedPerson?.Email       || "";
+
   return rec;
 }
 
-// ---------------------------------------------------------------------------
+// =============================================================================
 // EXPORT CSV
-// ---------------------------------------------------------------------------
+// =============================================================================
 function exportCsv() {
   const cols = [
-    ["ideaName","Business case idea"],["status","Status"],["personDisplayName","Person"],
-    ["department","Department or GP"],["problemStatement","Problem statement"],
-    ["scaleBusinessImpact","Scale and business impact"],["currentWorkarounds","Current workarounds failing"],
-    ["proposedSolution","Innovation approach"],["mvpScope","MVP scope"],
-    ["enabler","Technology or process enabler"],["unfairAdvantage","Unfair advantage"],
-    ["valueProposition","Value proposition"],["costSavings","Cost savings"],
-    ["efficiencyGain","Efficiency gain %"],["paybackMonths","Payback period months"],
-    ["activeUsers","Active users"],["adoptionRate","Adoption rate %"],
-    ["revenueImpact","Revenue impact"],["cycleTimeReduction","Cycle time reduction %"],
-    ["productivityUplift","Productivity uplift %"],["scheduleImpact","Schedule impact"],
-    ["goToMarketChannels","Digital and direct sales channel"],
-    ["changeManagement","Change management and training"],["rolloutPlan","Phased rollout plan"],
-    ["toolsPlatformCharges","Tools and platform charges"],["licenseCost","License cost"],
-    ["developmentCost","Development cost"],["supportMaintenanceCost","Support and maintenance"],
-    ["recurringCostAvoidance","Recurring cost avoidance"],["marginImprovement","Margin improvement %"],
-    ["scalabilityNotes","Scalable to all GPs"],["modified","Updated"]
+    ["ideaName",             "Business case idea"],
+    ["status",               "Status"],
+    ["personDisplayName",    "Person"],
+    ["department",           "Department or GP"],
+    ["problemStatement",     "Problem statement"],
+    ["scaleBusinessImpact",  "Scale and business impact"],
+    ["currentWorkarounds",   "Current workarounds failing"],
+    ["proposedSolution",     "Innovation approach"],
+    ["mvpScope",             "MVP scope"],
+    ["enabler",              "Technology or process enabler"],
+    ["unfairAdvantage",      "Unfair advantage"],
+    ["valueProposition",     "Value proposition"],
+    ["costSavings",          "Cost savings"],
+    ["efficiencyGain",       "Efficiency gain %"],
+    ["paybackMonths",        "Payback period months"],
+    ["activeUsers",          "Active users"],
+    ["adoptionRate",         "Adoption rate %"],
+    ["revenueImpact",        "Revenue impact"],
+    ["cycleTimeReduction",   "Cycle time reduction %"],
+    ["productivityUplift",   "Productivity uplift %"],
+    ["scheduleImpact",       "Schedule impact"],
+    ["goToMarketChannels",   "Digital and direct sales channel"],
+    ["changeManagement",     "Change management and training"],
+    ["rolloutPlan",          "Phased rollout plan"],
+    ["toolsPlatformCharges", "Tools and platform charges"],
+    ["licenseCost",          "License cost"],
+    ["developmentCost",      "Development cost"],
+    ["supportMaintenanceCost","Support and maintenance"],
+    ["recurringCostAvoidance","Recurring cost avoidance"],
+    ["marginImprovement",    "Margin improvement %"],
+    ["scalabilityNotes",     "Scalable to all GPs"],
+    ["modified",             "Updated"]
   ];
 
   const rows = filtered();
-  const csv = [
-    cols.map(([, l]) => csvQ(l)).join(","),
-    ...rows.map(r => cols.map(([k]) => csvQ(r[k])).join(","))
+  const csv  = [
+    cols.map(([, label]) => csvQ(label)).join(","),
+    ...rows.map(r => cols.map(([key]) => csvQ(r[key])).join(","))
   ].join("\r\n");
 
   const a = Object.assign(document.createElement("a"), {
-    href: URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })),
+    href:     URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })),
     download: `innovation-cases-${new Date().toISOString().slice(0, 10)}.csv`
   });
   document.body.append(a);
@@ -1321,9 +1345,9 @@ function exportCsv() {
   a.remove();
 }
 
-// ---------------------------------------------------------------------------
-// HELPERS
-// ---------------------------------------------------------------------------
+// =============================================================================
+// UTILITY HELPERS
+// =============================================================================
 function setBusy(v) {
   state.busy = v;
   document.body.classList.toggle("is-busy", v);
@@ -1336,12 +1360,14 @@ function showToast(msg) {
   state.toastTimer = setTimeout(() => els.toast.classList.remove("show"), 3800);
 }
 
+// Return 0 for any blank / non-numeric value
 function numOrZero(v) {
   return v === "" || v == null || isNaN(Number(v)) ? 0 : Number(v);
 }
 
+// Extract display string from a SharePoint choice object or plain string
 function choiceText(v) {
-  if (v == null) return "";
+  if (v == null)           return "";
   if (typeof v === "string") return v;
   if (typeof v === "object") return v.Value || v.value || v.Label || v.label || "";
   return String(v);
@@ -1366,7 +1392,7 @@ function fmtN(v, d = 0) {
   const n = Number(v) || 0;
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: d,
-    minimumFractionDigits: d > 0 && Math.abs(n % 1) > 0 ? d : 0
+    minimumFractionDigits: d > 0 && n % 1 !== 0 ? d : 0
   }).format(n);
 }
 
