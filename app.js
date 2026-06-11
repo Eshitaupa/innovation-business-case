@@ -671,12 +671,29 @@ const CONFIG = {
   },
 
   // All fields the SP list stores as numbers (sent as strings to avoid PA schema mismatch)
-  numberFields: new Set([
-    "costSavings", "efficiencyGain", "paybackMonths", "activeUsers",
-    "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift",
-    "toolsPlatformCharges", "licenseCost", "developmentCost",
-    "supportMaintenanceCost", "recurringCostAvoidance", "marginImprovement"
-  ]),
+numberFields: new Set([
+  "costSavings",
+  "efficiencyGain",
+  "paybackMonths",
+  "activeUsers",
+  "adoptionRate",
+  "revenueImpact",
+  "cycleTimeReduction",
+  "productivityUplift",
+
+  "scheduleImpact",
+  "goToMarketChannels",
+  "changeManagement",
+
+  "toolsPlatformCharges",
+  "licenseCost",
+  "developmentCost",
+  "supportMaintenanceCost",
+  "recurringCostAvoidance",
+  "marginImprovement",
+
+  "scalabilityNotes"
+]),
 
   fallbackChoices: {
     department: ["OGC"],
@@ -1214,45 +1231,32 @@ async function saveViaFlow(payload) {
   try { return text ? JSON.parse(text) : {}; } catch { return {}; }
 }
 
-/**
- * Build the payload sent to the Save Flow.
- *
- * All numeric values are sent as STRINGS (e.g. "10" not 10).
- * This sidesteps the PA trigger schema type-mismatch entirely.
- * The SharePoint "Create/Update item" connector accepts string values for
- * Number columns and coerces them automatically.
- *
- * Text fields that are empty are omitted (keeps payload clean).
- * Number fields that are blank ("") are also omitted.
- */
+
 function buildSharePointPayload(record) {
   const payload = {
     operation: record.id ? "update" : "create",
-    id:        record.id ? String(record.id) : ""
+    id: record.id ? String(record.id) : ""
   };
 
   for (const [jsKey, spField] of Object.entries(CONFIG.fieldMap)) {
     if (["created", "modified", "id"].includes(jsKey)) continue;
 
     const val = record[jsKey];
+    const s = (val == null ? "" : String(val)).trim();
+
+    if (s === "") continue;
 
     if (CONFIG.numberFields.has(jsKey)) {
-      // Send as STRING — avoids PA trigger schema integer/float mismatch
-      // SP connector will coerce to number when writing to the list column
-      const s = (val == null ? "" : String(val)).trim();
-      if (s === "" || s === "0") continue;   // omit blank / zero — optional
-      payload[spField] = s;                  // intentionally a string
+      payload[spField] = Number(s);
     } else {
-      const s = (val == null ? "" : String(val)).trim();
-      if (s === "") continue;
       payload[spField] = s;
     }
   }
 
-  // People / Group field
+  // Person / Group field
   if (record.personClaims) {
-    payload["person"]            = record.personClaims;
-    payload["personDisplayName"] = record.personDisplayName || "";
+    payload.person = record.personClaims;
+    payload.personDisplayName = record.personDisplayName || "";
   }
 
   return payload;
