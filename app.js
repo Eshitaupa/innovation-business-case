@@ -928,8 +928,6 @@ sel.addEventListener("change", () => {
   if (hiddenField) hiddenField.value = claims;
 
   filterInput.value = displayName || email;
-
-  // ✅ ADD THIS
   sel.style.display = "none";
   sel.innerHTML = "";
 });
@@ -946,25 +944,15 @@ function fillPersonPicker(record) {
 
   const filterInput = document.getElementById("personFilterInput");
   const sel         = document.getElementById("personSelect");
+
   if (!filterInput || !sel) return;
-
   filterInput.value = record.personDisplayName || record.personEmail;
-
-  // Single pre-selected option
-  while (sel.firstChild) sel.removeChild(sel.firstChild);
-  const opt = document.createElement("option");
-  opt.value = record.personClaims;
-  opt.setAttribute("data-name",  record.personDisplayName);
-  opt.setAttribute("data-email", record.personEmail);
-  opt.textContent = (record.personDisplayName || "") + " — " + (record.personEmail || "");
-  opt.selected = true;
-  sel.appendChild(opt);
-  sel.style.display = "block";
+  sel.innerHTML = "";
+  sel.style.display = "none";
 
   const hiddenField = els.caseForm && els.caseForm.elements.personClaims;
   if (hiddenField) hiddenField.value = record.personClaims;
 }
-
 function resetPersonPicker() {
   state.selectedPerson = null;
   const filterInput = document.getElementById("personFilterInput");
