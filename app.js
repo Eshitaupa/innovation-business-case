@@ -666,6 +666,7 @@ const CONFIG = {
     recurringCostAvoidance: "field_28",
     marginImprovement:      "field_29",
     scalabilityNotes:       "field_30",
+    confidenceLevel:"Confidence_x0020_Level",
     created:                "Created",
     modified:               "Modified"
   },
@@ -673,14 +674,15 @@ const CONFIG = {
   numberFields: new Set([
     "costSavings", "efficiencyGain", "paybackMonths", "activeUsers",
     "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift","scheduleImpact", 
-    "toolsPlatformCharges", "licenseCost", "developmentCost",
+    "toolsPlatformCharges", "licenseCost", "developmentCost","confidenceLevel",
     "supportMaintenanceCost", "recurringCostAvoidance", "marginImprovement"
   ]),
 
 
   fallbackChoices: {
     department: ["OGC"],
-    status: ["Intake", "Reviewing", "MVP", "Scaling", "On hold"]
+    status: ["Intake", "Reviewing", "MVP", "Scaling", "On hold"],
+    confidenceLevel:["High", "Low", "Moderate"],
   }
 };
 
@@ -690,7 +692,7 @@ const CONFIG = {
 const state = {
   records:        [],
   allUsers:       [],
-  choices:        { department: [], status: [] },
+  choices:        { department: [], status: [],confidenceLevel:[] },
   mode:           "connecting",
   search:         "",
   statusFilter:   "All",
@@ -731,12 +733,14 @@ async function loadFromFlow() {
 
     if (data.choices && Array.isArray(data.choices.status) && data.choices.status.length) {
       state.choices.status     = data.choices.status;
+      state.choices.confidenceLevel     = data.choices.confidenceLevel;
       state.choices.department = Array.isArray(data.choices.department)
         ? data.choices.department : CONFIG.fallbackChoices.department;
     } else {
       const rows = extractRows(data);
       state.choices.status     = uniqueChoices(rows, "field_3") || CONFIG.fallbackChoices.status;
       state.choices.department = uniqueChoices(rows, "field_2") || CONFIG.fallbackChoices.department;
+      state.choices.confidenceLevel     = uniqueChoices(rows, "Confidence_x0020_Level") || CONFIG.fallbackChoices.confidenceLevel;
     }
 
     if (Array.isArray(data.users)) {
@@ -752,7 +756,7 @@ async function loadFromFlow() {
     console.error("Flow load failed:", err);
     state.records = [];
     state.allUsers = [];
-    state.choices = { department: [...CONFIG.fallbackChoices.department], status: [...CONFIG.fallbackChoices.status] };
+    state.choices = { department: [...CONFIG.fallbackChoices.department], status: [...CONFIG.fallbackChoices.status], confidenceLevel: [...CONFIG.fallbackChoices.confidenceLevel] };
     state.mode = "error";
     showToast("⚠ Could not load SharePoint data — " + err.message);
   } finally {
@@ -831,6 +835,7 @@ function mapItem(item) {
     recurringCostAvoidance: numOrZero(item.field_28),
     marginImprovement:      numOrZero(item.field_29),
     scalabilityNotes:       item.field_30 || "",
+    confidenceLevel:         choiceText(item.Confidence_x0020_Level),
     created:                item.Created  || "",
     modified:               item.Modified || ""
   };
@@ -973,8 +978,9 @@ function populateDropdowns() {
   const deptSel    = document.querySelector('select[name="department"]');
   const statusSel  = document.querySelector('select[name="status"]');
   const statusFilt = document.getElementById("statusFilter");
-
+  const confSel    = document.querySelector('select[name="confidenceLevel"]');
   if (deptSel)    deptSel.innerHTML    = "";
+  if (confSel)    confSel.innerHTML    = "";
   if (statusSel)  statusSel.innerHTML  = "";
   if (statusFilt) statusFilt.innerHTML = '<option value="All">All statuses</option>';
 
@@ -983,6 +989,12 @@ function populateDropdowns() {
     const o = document.createElement("option");
     o.value = o.textContent = c;
     deptSel?.appendChild(o);
+  });
+  state.choices.confidenceLevel.forEach(c => {
+    if (!c) return;
+    const o = document.createElement("option");
+    o.value = o.textContent = c;
+    confSel?.appendChild(o);
   });
 
   state.choices.status.forEach(c => {
@@ -1064,7 +1076,7 @@ function renderTable() {
   }
   els.caseRows.innerHTML = rows.map(r => `
     <tr>
-      <td class="idea-cell">${esc(r.ideaName || "Untitled case")}</td>
+      <td class="idea-cell">${esc(r.ideaName )}</td>
       <td><span class="status-pill" data-status="${esc(r.status)}">${esc(r.status)}</span></td>
       <td>${esc(r.personDisplayName)}</td>
       <td class="text-cell">${esc(r.valueProposition)}</td>
@@ -1097,7 +1109,7 @@ function filtered() {
     .filter(r => state.statusFilter === "All" || r.status === state.statusFilter)
     .filter(r => !q || [
       r.ideaName, r.personDisplayName, r.personEmail,
-      r.department, r.status, r.problemStatement, r.valueProposition
+      r.department, r.status, r.problemStatement, r.valueProposition,r.confidenceLevel
     ].some(v => String(v || "").toLowerCase().includes(q)))
     .sort((a, b) => new Date(b.modified || b.created || 0) - new Date(a.modified || a.created || 0));
 }
@@ -1122,7 +1134,7 @@ function openDrawer(record = null) {
   } else {
     els.caseForm.elements.id.value = "";
     const s = els.caseForm.elements.status;
-    if (s) s.value = state.choices.status[0] || "Intake";
+    if (s) s.value = state.choices.status[0];
   }
 
   els.drawerBackdrop.hidden = false;
@@ -1288,6 +1300,7 @@ function exportCsv() {
     ["recurringCostAvoidance","Recurring cost avoidance"],
     ["marginImprovement",     "Margin improvement %"],
     ["scalabilityNotes",      "Scalable to all GPs"],
+    ["confidenceLevel",        "Confidence Level"],
     ["modified",              "Updated"]
   ];
   const rows = filtered();
