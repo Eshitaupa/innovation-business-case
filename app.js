@@ -674,7 +674,7 @@ const CONFIG = {
   numberFields: new Set([
     "costSavings", "efficiencyGain", "paybackMonths", "activeUsers",
     "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift","scheduleImpact", 
-    "toolsPlatformCharges", "licenseCost", "developmentCost","confidenceLevel",
+    "toolsPlatformCharges", "licenseCost", "developmentCost",
     "supportMaintenanceCost", "recurringCostAvoidance", "marginImprovement"
   ]),
 
@@ -733,7 +733,11 @@ async function loadFromFlow() {
 
     if (data.choices && Array.isArray(data.choices.status) && data.choices.status.length) {
       state.choices.status     = data.choices.status;
-      state.choices.confidenceLevel     = data.choices.confidenceLevel;
+      
+state.choices.confidenceLevel = Array.isArray(data.choices.confidenceLevel) && data.choices.confidenceLevel.length
+  ? data.choices.confidenceLevel
+  : CONFIG.fallbackChoices.confidenceLevel;
+
       state.choices.department = Array.isArray(data.choices.department)
         ? data.choices.department : CONFIG.fallbackChoices.department;
     } else {
@@ -1135,6 +1139,10 @@ function openDrawer(record = null) {
     els.caseForm.elements.id.value = "";
     const s = els.caseForm.elements.status;
     if (s) s.value = state.choices.status[0];
+    
+const c = els.caseForm.elements.confidenceLevel;
+if (c) c.value = state.choices.confidenceLevel[0] || "";
+
   }
 
   els.drawerBackdrop.hidden = false;
