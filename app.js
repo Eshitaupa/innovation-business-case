@@ -994,7 +994,7 @@ function populateDropdowns() {
     o.value = o.textContent = c;
     deptSel?.appendChild(o);
   });
-  state.choices.confidenceLevel.forEach(c => {
+  (state.choices.confidenceLevel || []).forEach(c => {
     if (!c) return;
     const o = document.createElement("option");
     o.value = o.textContent = c;
