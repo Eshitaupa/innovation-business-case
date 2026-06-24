@@ -685,8 +685,8 @@ const CONFIG = {
   ]),
 
   fallbackChoices: {
-    department:     [""],
-    status:         ["Intake", "Reviewing", "MVP", "Scaling", "On hold"],
+    department:     ["OGC"],
+    // status:         ["Intake", "Reviewing", "MVP", "Scaling", "On hold"],
     confidenceLevel: ["High", "Moderate", "Low"]
   }
 };
@@ -715,9 +715,6 @@ document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
   cacheElements();
-
-  console.log("Cached elements:", els);
-
   bindEvents();
   await loadFromFlow();
   populateDropdowns();
@@ -827,7 +824,7 @@ function mapItem(item) {
     personEmail:            p?.Email       || p?.email       || "",
     personClaims:           p?.Claims      || p?.claims      || "",
     department:             choiceText(item.field_2),
-    status:                 choiceText(item.field_3) || "Intake",
+    status:                 choiceText(item.field_3),
     problemStatement:       item.field_4  || "",
     scaleBusinessImpact:    item.field_5  || "",
     currentWorkarounds:     item.field_6  || "",
@@ -1051,38 +1048,37 @@ function cacheElements() {
 }
 
 function bindEvents() {
-  console.log("newCaseButton", els.newCaseButton);
-  console.log("closeDrawerButton", els.closeDrawerButton);
-  console.log("cancelButton", els.cancelButton);
-  console.log("drawerBackdrop", els.drawerBackdrop);
-  console.log("exportButton", els.exportButton);
-  console.log("caseForm", els.caseForm);
-  console.log("searchInput", els.searchInput);
-  console.log("statusFilter", els.statusFilter);
-  console.log("refreshButton", els.refreshButton);
+  els.newCaseButton.addEventListener("click",    () => openDrawer());
+  els.closeDrawerButton.addEventListener("click", closeDrawer);
+  els.cancelButton.addEventListener("click",      closeDrawer);
+  els.drawerBackdrop.addEventListener("click",    closeDrawer);
+  els.exportButton.addEventListener("click",      exportCsv);
+  els.caseForm.addEventListener("submit",         saveCurrentCase);
 
-  els.newCaseButton?.addEventListener("click", () => openDrawer());
-  els.closeDrawerButton?.addEventListener("click", closeDrawer);
-  els.cancelButton?.addEventListener("click", closeDrawer);
-  els.drawerBackdrop?.addEventListener("click", closeDrawer);
-  els.exportButton?.addEventListener("click", exportCsv);
-  els.caseForm?.addEventListener("submit", saveCurrentCase);
-
-  els.searchInput?.addEventListener("input", e => {
+  els.searchInput.addEventListener("input", e => {
     state.search = e.target.value.trim().toLowerCase();
     renderTable();
   });
 
-  els.statusFilter?.addEventListener("change", e => {
+  els.statusFilter.addEventListener("change", e => {
     state.statusFilter = e.target.value;
     renderTable();
   });
 
-  els.refreshButton?.addEventListener("click", async () => {
+  els.refreshButton.addEventListener("click", async () => {
     await reloadRecords();
     render();
   });
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && els.drawer.classList.contains("open")) closeDrawer();
+  });
+
+  document.addEventListener("wheel", e => {
+    if (document.activeElement.type === "number") e.preventDefault();
+  }, { passive: false });
 }
+
 // =============================================================================
 // RENDER
 // =============================================================================
@@ -1115,7 +1111,6 @@ function renderTable() {
   els.caseRows.innerHTML = rows.map(r => `
     <tr>
       <td class="idea-cell">${esc(r.ideaName)}</td>
-      <td><span class="status-pill" data-status="${esc(r.status)}">${esc(r.status)}</span></td>
       <td>${esc(r.personDisplayName)}</td>
       <td class="text-cell">${esc(r.valueProposition)}</td>
       <td class="number-cell">${fmt$(r.costSavings)}</td>
@@ -1269,7 +1264,7 @@ function formToRecord(fd) {
     rec[key]  = raw == null ? "" : String(raw).trim();
   }
   rec.id     = fd.get("id") || "";
-  rec.status = rec.status || state.choices.status[0] || "Intake";
+  rec.status = rec.status || state.choices.status[0];
 
   rec.personClaims      = fd.get("personClaims") || "";
   rec.personDisplayName = state.selectedPerson?.displayName || "";
