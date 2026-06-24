@@ -686,7 +686,7 @@ const CONFIG = {
 
   fallbackChoices: {
     department:     ["OGC"],
-    status:         ["Intake", "Reviewing", "MVP", "Scaling", "On hold"],
+    // status:         ["Intake", "Reviewing", "MVP", "Scaling", "On hold"],
     confidenceLevel: ["High", "Moderate", "Low"]
   }
 };
