@@ -1111,7 +1111,6 @@ function renderTable() {
   els.caseRows.innerHTML = rows.map(r => `
     <tr>
       <td class="idea-cell">${esc(r.ideaName)}</td>
-      <td><span class="status-pill" data-status="${esc(r.status)}">${esc(r.status)}</span></td>
       <td>${esc(r.personDisplayName)}</td>
       <td class="text-cell">${esc(r.valueProposition)}</td>
       <td class="number-cell">${fmt$(r.costSavings)}</td>
