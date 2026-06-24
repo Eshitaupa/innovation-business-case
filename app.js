@@ -824,7 +824,7 @@ function mapItem(item) {
     personEmail:            p?.Email       || p?.email       || "",
     personClaims:           p?.Claims      || p?.claims      || "",
     department:             choiceText(item.field_2),
-    status:                 choiceText(item.field_3) || "Intake",
+    status:                 choiceText(item.field_3),
     problemStatement:       item.field_4  || "",
     scaleBusinessImpact:    item.field_5  || "",
     currentWorkarounds:     item.field_6  || "",
@@ -1265,7 +1265,7 @@ function formToRecord(fd) {
     rec[key]  = raw == null ? "" : String(raw).trim();
   }
   rec.id     = fd.get("id") || "";
-  rec.status = rec.status || state.choices.status[0] || "Intake";
+  rec.status = rec.status || state.choices.status[0];
 
   rec.personClaims      = fd.get("personClaims") || "";
   rec.personDisplayName = state.selectedPerson?.displayName || "";
