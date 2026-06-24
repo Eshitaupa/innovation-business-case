@@ -833,7 +833,6 @@ function mapItem(item) {
     personEmail:            p?.Email       || p?.email       || "",
     personClaims:           p?.Claims      || p?.claims      || "",
     department:             choiceText(item.field_2),
-    status:                 choiceText(item.field_3),
     problemStatement:       item.field_4  || "",
     scaleBusinessImpact:    item.field_5  || "",
     currentWorkarounds:     item.field_6  || "",
