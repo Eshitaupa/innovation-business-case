@@ -89,28 +89,12 @@
         </article>
       </section>
 
-      <section class="table-toolbar" aria-label="Table filters">
-        <label class="search-field">
-          <svg><use href="#icon-search"></use></svg>
-          <input id="searchInput" type="search" autocomplete="off" placeholder="Search cases">
-        </label>
-
-        <!-- <label class="select-field">
-          <span>Status</span>
-          <select id="statusFilter">
-            <option value="All">All</option>
-            <option value="Intake">Intake</option>
-            <option value="Reviewing">Reviewing</option>
-            <option value="MVP">MVP</option>
-            <option value="Scaling">Scaling</option>
-            <option value="On hold">On hold</option>
-          </select>
-        </label> -->
-        <label>
-  <span>Status</span>
-  <select id="statusFilter"></select>
-</label>
-      </section>
+<section class="table-toolbar" aria-label="Table filters">
+  <label class="search-field">
+    <svg>#icon-search</use></svg>
+    <input id="searchInput" type="search" autocomplete="off" placeholder="Search cases">
+  </label>
+</section>
 
       <section class="table-panel" aria-label="Innovation business cases">
         <div class="table-scroll">
@@ -224,26 +208,12 @@
               <textarea name="mvpScope" rows="3"></textarea>
             </label>
 
-            <!-- <label>
-              <span>Technology or process enabler</span>
-              <textarea name="enabler" rows="3"></textarea>
-            </label>
-
-            <label>
-              <span>Unfair advantage</span>
-              <textarea name="unfairAdvantage" rows="3"></textarea>
-            </label> -->
-<!-- 
-            <label>
-              <span>Stratergic Benefits</span>
-              <textarea name="valueProposition" rows="3"></textarea>
-            </label> -->
           </div>
         </section>
         <section class="form-section">
           <h3>Stratergic Benefits</h3>
              <label>
-              <textarea name="mvpScope" rows="3"></textarea>
+              <textarea name="valueProposition" rows="3"></textarea>
             </label>
 
         </section>
@@ -374,7 +344,7 @@
             <h3>Long Term Value Proposition</h3>
                   <label>
               <span>Productivity Uplift</span>
-              <input name="marginImprovement" type="number" min="0" max="100">
+              <input name="productivityUplift" type="number" min="0" max="100">
             </label>
                   <label>
               <span>Margin improvement %</span>

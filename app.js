@@ -637,14 +637,14 @@ const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
 
-  listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
-  saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
+  listFlowUrl: "YOUR_LIST_FLOW_URL",
+  saveFlowUrl: "YOUR_SAVE_FLOW_URL",
 
   fieldMap: {
     id:                     "Id",
     ideaName:               "Title",
     department:             "field_2",
-    status:                 "field_3",
+
     problemStatement:       "field_4",
     scaleBusinessImpact:    "field_5",
     currentWorkarounds:     "field_6",
@@ -653,6 +653,7 @@ const CONFIG = {
     enabler:                "field_9",
     unfairAdvantage:        "field_10",
     valueProposition:       "field_11",
+
     costSavings:            "field_12",
     efficiencyGain:         "field_13",
     paybackMonths:          "field_14",
@@ -662,9 +663,11 @@ const CONFIG = {
     cycleTimeReduction:     "field_18",
     productivityUplift:     "field_19",
     scheduleImpact:         "field_20",
+
     goToMarketChannels:     "field_21",
     changeManagement:       "field_22",
     rolloutPlan:            "field_23",
+
     toolsPlatformCharges:   "field_24",
     licenseCost:            "field_25",
     developmentCost:        "field_26",
@@ -672,21 +675,32 @@ const CONFIG = {
     recurringCostAvoidance: "field_28",
     marginImprovement:      "field_29",
     scalabilityNotes:       "field_30",
+
     confidenceLevel:        "Confidence_x0020_Level",
     created:                "Created",
     modified:               "Modified"
   },
 
   numberFields: new Set([
-    "costSavings", "efficiencyGain", "paybackMonths", "activeUsers",
-    "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift",
-    "scheduleImpact", "toolsPlatformCharges", "licenseCost", "developmentCost",
-    "supportMaintenanceCost", "recurringCostAvoidance", "marginImprovement"
+    "costSavings",
+    "efficiencyGain",
+    "paybackMonths",
+    "activeUsers",
+    "adoptionRate",
+    "revenueImpact",
+    "cycleTimeReduction",
+    "productivityUplift",
+    "scheduleImpact",
+    "toolsPlatformCharges",
+    "licenseCost",
+    "developmentCost",
+    "supportMaintenanceCost",
+    "recurringCostAvoidance",
+    "marginImprovement"
   ]),
 
   fallbackChoices: {
-    department:     [""],
-    // status:         ["Intake", "Reviewing", "MVP", "Scaling", "On hold"],
+    department: [""],
     confidenceLevel: ["High", "Moderate", "Low"]
   }
 };
@@ -697,13 +711,12 @@ const CONFIG = {
 const state = {
   records:        [],
   allUsers:       [],
-  choices:        { department: [], status: [], confidenceLevel: [] },
+  choices: { department: [], confidenceLevel: [] },
   mode:           "connecting",
   search:         "",
-  statusFilter:   "All",
   busy:           false,
   toastTimer:     0,
-  selectedPerson: null  // { displayName, email, claims }
+  selectedPerson: null 
 };
 
 const els = {};
@@ -737,9 +750,7 @@ async function loadFromFlow() {
     const data = await res.json();
 
     // Resolve choices — prefer what the flow sends, fall back to CONFIG defaults
-    if (data.choices && Array.isArray(data.choices.status) && data.choices.status.length) {
-      state.choices.status = data.choices.status;
-
+    if (data.choices) {
       state.choices.confidenceLevel =
         Array.isArray(data.choices.confidenceLevel) && data.choices.confidenceLevel.length
           ? data.choices.confidenceLevel
@@ -751,7 +762,6 @@ async function loadFromFlow() {
           : [...CONFIG.fallbackChoices.department];
     } else {
       const rows = extractRows(data);
-      state.choices.status         = uniqueChoices(rows, "field_3")                 || [...CONFIG.fallbackChoices.status];
       state.choices.department     = uniqueChoices(rows, "field_2")                 || [...CONFIG.fallbackChoices.department];
       state.choices.confidenceLevel = uniqueChoices(rows, "Confidence_x0020_Level") || [...CONFIG.fallbackChoices.confidenceLevel];
     }
@@ -770,7 +780,6 @@ async function loadFromFlow() {
     state.allUsers = [];
     state.choices  = {
       department:     [...CONFIG.fallbackChoices.department],
-      status:         [...CONFIG.fallbackChoices.status],
       confidenceLevel: [...CONFIG.fallbackChoices.confidenceLevel]
     };
     state.mode = "error";
@@ -993,21 +1002,11 @@ function resetPersonPicker() {
 // =============================================================================
 function populateDropdowns() {
   const deptSel    = document.querySelector('select[name="department"]');
-  const statusSel  = document.querySelector('select[name="status"]');
-  const statusFilt = document.getElementById("statusFilter");
   const confSel    = document.querySelector('select[name="confidenceLevel"]');
 
   // Clear first
   if (deptSel)    deptSel.innerHTML    = "";
   if (confSel)    confSel.innerHTML    = "";
-  if (statusSel)  statusSel.innerHTML  = "";
-  if (statusFilt) {
-    statusFilt.innerHTML = "";
-    const allOpt = document.createElement("option");
-    allOpt.value = allOpt.textContent = "All";
-    statusFilt.appendChild(allOpt);
-  }
-
   state.choices.department.forEach(c => {
     if (!c) return;
     const o = document.createElement("option");
@@ -1021,16 +1020,6 @@ function populateDropdowns() {
     o.value = o.textContent = c;
     confSel?.appendChild(o);
   });
-
-  state.choices.status.forEach(c => {
-    if (!c) return;
-    const o1 = document.createElement("option");
-    o1.value = o1.textContent = c;
-    const o2 = document.createElement("option");
-    o2.value = o2.textContent = c;
-    statusSel?.appendChild(o1);
-    statusFilt?.appendChild(o2);
-  });
 }
 
 // =============================================================================
@@ -1039,7 +1028,7 @@ function populateDropdowns() {
 function cacheElements() {
   [
     "connectionBadge", "refreshButton", "exportButton", "newCaseButton",
-    "caseRows", "searchInput", "statusFilter",
+    "caseRows", "searchInput",
     "summaryTotal", "summarySavings", "summaryEfficiency", "summaryPayback",
     "drawerBackdrop", "closeDrawerButton", "cancelButton",
     "caseForm", "drawerTitle", "saveButton", "toast"
@@ -1057,11 +1046,6 @@ function bindEvents() {
 
   els.searchInput.addEventListener("input", e => {
     state.search = e.target.value.trim().toLowerCase();
-    renderTable();
-  });
-
-  els.statusFilter.addEventListener("change", e => {
-    state.statusFilter = e.target.value;
     renderTable();
   });
 
@@ -1139,10 +1123,9 @@ function renderTable() {
 function filtered() {
   const q = state.search;
   return [...state.records]
-    .filter(r => state.statusFilter === "All" || r.status === state.statusFilter)
     .filter(r => !q || [
       r.ideaName, r.personDisplayName, r.personEmail,
-      r.department, r.status, r.problemStatement, r.valueProposition, r.confidenceLevel
+      r.department, r.problemStatement, r.valueProposition, r.confidenceLevel
     ].some(v => String(v || "").toLowerCase().includes(q)))
     .sort((a, b) =>
       new Date(b.modified || b.created || 0) - new Date(a.modified || a.created || 0)
@@ -1168,10 +1151,6 @@ function openDrawer(record = null) {
     fillPersonPicker(record);
   } else {
     els.caseForm.elements.id.value = "";
-
-    const s = els.caseForm.elements.status;
-    if (s) s.value = state.choices.status[0] || "";
-
     const c = els.caseForm.elements.confidenceLevel;
     if (c) c.value = state.choices.confidenceLevel[0] || "";
   }
@@ -1264,8 +1243,6 @@ function formToRecord(fd) {
     rec[key]  = raw == null ? "" : String(raw).trim();
   }
   rec.id     = fd.get("id") || "";
-  rec.status = rec.status || state.choices.status[0];
-
   rec.personClaims      = fd.get("personClaims") || "";
   rec.personDisplayName = state.selectedPerson?.displayName || "";
   rec.personEmail       = state.selectedPerson?.email       || "";
@@ -1279,7 +1256,6 @@ function formToRecord(fd) {
 function exportCsv() {
   const cols = [
     ["ideaName",              "Business case idea"],
-    ["status",                "Status"],
     ["personDisplayName",     "Person"],
     ["department",            "Department or GP"],
     ["problemStatement",      "Problem statement"],
