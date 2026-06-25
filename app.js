@@ -759,6 +759,11 @@ function buildRichTextEditors() {
       <button type="button" class="rich-btn" data-cmd="insertUnorderedList" title="Bullet list">&#8226; List</button>
       <button type="button" class="rich-btn" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
       <span class="rich-sep"></span>
+      <button type="button" class="rich-btn" data-cmd="justifyLeft" title="Align left">Left</button>
+      <button type="button" class="rich-btn" data-cmd="justifyCenter" title="Align center">Center</button>
+      <button type="button" class="rich-btn" data-cmd="justifyRight" title="Align right">Right</button>
+      <button type="button" class="rich-btn" data-cmd="justifyFull" title="Justify">Justify</button>
+      <span class="rich-sep"></span>
       <button type="button" class="rich-btn" data-cmd="removeFormat" title="Clear formatting">&#10005; Clear</button>
     `;
 
@@ -792,81 +797,161 @@ function buildRichTextEditors() {
     textarea.parentNode.insertBefore(wrapper, textarea);
     textarea.style.display = "none";
 
+    editor.dataset.lastValidHtml = "";
+
     // Toolbar button events
     toolbar.querySelectorAll(".rich-btn[data-cmd]").forEach(btn => {
-      btn.addEventListener("mousedown", e => {
+      btn.addEventListener("mousedown", e => e.preventDefault());
+      btn.addEventListener("click", e => {
         e.preventDefault();
         const cmd = btn.getAttribute("data-cmd");
-        document.execCommand(cmd, false, null);
-        editor.focus();
+        runRichCommand(editor, toolbar, cmd);
         updateCounter(editor, counter, limitMsg, limit);
         syncEditorToTextarea(fieldName);
       });
     });
 
     // Input events
+    editor.addEventListener("beforeinput", e => {
+      if (e.inputType && e.inputType.startsWith("delete")) return;
+      const currentLen = getEditorTextLength(editor);
+      const selectedLen = getSelectedTextLength(editor);
+      const incomingLen = e.data ? e.data.length : 0;
+      if (incomingLen && currentLen - selectedLen + incomingLen > limit) {
+        e.preventDefault();
+        limitMsg.classList.add("show");
+        setTimeout(() => limitMsg.classList.remove("show"), 3000);
+      }
+    });
+
     editor.addEventListener("input", () => {
       enforceLimit(editor, counter, limitMsg, limit);
+      saveRichSelection(editor);
       syncEditorToTextarea(fieldName);
     });
 
     editor.addEventListener("paste", e => {
       e.preventDefault();
       const text = (e.clipboardData || window.clipboardData).getData("text/plain");
-      document.execCommand("insertText", false, text);
+      insertPlainTextWithinLimit(editor, text, limit, limitMsg);
+      enforceLimit(editor, counter, limitMsg, limit);
+      saveRichSelection(editor);
+      syncEditorToTextarea(fieldName);
     });
 
     // Update toolbar active states on selection
-    editor.addEventListener("keyup", () => updateToolbarState(toolbar));
-    editor.addEventListener("mouseup", () => updateToolbarState(toolbar));
+    ["keyup", "mouseup", "focus", "click"].forEach(evt => {
+      editor.addEventListener(evt, () => {
+        saveRichSelection(editor);
+        updateToolbarState(toolbar, editor);
+      });
+    });
   });
 }
 
 function enforceLimit(editor, counter, limitMsg, limit) {
-  const text = editor.innerText || "";
-  const len = text.replace(/\n$/, "").length;
+  const len = getEditorTextLength(editor);
   counter.textContent = `${len} / ${limit}`;
 
   if (len > limit) {
     counter.classList.add("over");
     limitMsg.classList.add("show");
-    // Trim to limit
-    trimEditorToLimit(editor, limit);
+    restoreLastValidEditorState(editor);
     setTimeout(() => limitMsg.classList.remove("show"), 3000);
   } else {
     counter.classList.remove("over");
     limitMsg.classList.remove("show");
+    editor.dataset.lastValidHtml = editor.innerHTML;
   }
 }
 
 function updateCounter(editor, counter, limitMsg, limit) {
-  const text = editor.innerText || "";
-  const len = text.replace(/\n$/, "").length;
+  const len = getEditorTextLength(editor);
   counter.textContent = `${len} / ${limit}`;
-  if (len > limit) {
-    counter.classList.add("over");
-    limitMsg.classList.add("show");
-    setTimeout(() => limitMsg.classList.remove("show"), 3000);
-  } else {
-    counter.classList.remove("over");
-    limitMsg.classList.remove("show");
-  }
+  counter.classList.toggle("over", len > limit);
+  limitMsg.classList.toggle("show", len > limit);
+  if (len <= limit) editor.dataset.lastValidHtml = editor.innerHTML;
 }
 
 function trimEditorToLimit(editor, limit) {
-  let text = editor.innerText || "";
-  if (text.replace(/\n$/, "").length <= limit) return;
-  // Restore previous valid state from selection
-  document.execCommand("undo");
+  if (getEditorTextLength(editor) <= limit) return;
+  restoreLastValidEditorState(editor);
 }
 
-function updateToolbarState(toolbar) {
-  const cmds = ["bold", "italic", "underline"];
+function getEditorTextLength(editor) {
+  return (editor.innerText || "").replace(/\n$/, "").length;
+}
+
+function selectionIsInside(editor) {
+  const sel = window.getSelection();
+  return !!(sel && sel.rangeCount && editor.contains(sel.anchorNode));
+}
+
+function saveRichSelection(editor) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !editor.contains(sel.anchorNode)) return;
+  editor._savedRange = sel.getRangeAt(0).cloneRange();
+}
+
+function restoreRichSelection(editor) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  editor.focus();
+  if (editor._savedRange && editor.contains(editor._savedRange.commonAncestorContainer)) {
+    sel.removeAllRanges();
+    sel.addRange(editor._savedRange);
+    return;
+  }
+  placeCaretAtEnd(editor);
+}
+
+function placeCaretAtEnd(el) {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function getSelectedTextLength(editor) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !editor.contains(sel.anchorNode)) return 0;
+  return String(sel.toString() || "").length;
+}
+
+function insertPlainTextWithinLimit(editor, text, limit, limitMsg) {
+  restoreRichSelection(editor);
+  const currentLen = getEditorTextLength(editor);
+  const selectedLen = getSelectedTextLength(editor);
+  const available = Math.max(0, limit - (currentLen - selectedLen));
+  const insertText = String(text || "").slice(0, available);
+  if (insertText.length < String(text || "").length) {
+    limitMsg.classList.add("show");
+    setTimeout(() => limitMsg.classList.remove("show"), 3000);
+  }
+  if (insertText) document.execCommand("insertText", false, insertText);
+}
+
+function restoreLastValidEditorState(editor) {
+  editor.innerHTML = editor.dataset.lastValidHtml || "";
+  placeCaretAtEnd(editor);
+}
+
+function runRichCommand(editor, toolbar, cmd) {
+  restoreRichSelection(editor);
+  document.execCommand("styleWithCSS", false, false);
+  document.execCommand(cmd, false, null);
+  saveRichSelection(editor);
+  updateToolbarState(toolbar, editor);
+}
+
+function updateToolbarState(toolbar, editor) {
+  if (editor && !selectionIsInside(editor)) return;
+  const cmds = ["bold", "italic", "underline", "justifyLeft", "justifyCenter", "justifyRight", "justifyFull"];
   cmds.forEach(cmd => {
     const btn = toolbar.querySelector(`[data-cmd="${cmd}"]`);
-    if (btn) {
-      btn.classList.toggle("active", document.queryCommandState(cmd));
-    }
+    if (btn) btn.classList.toggle("active", document.queryCommandState(cmd));
   });
 }
 
@@ -887,6 +972,7 @@ function setEditorContent(fieldName, htmlContent) {
 
   if (editor) {
     editor.innerHTML = htmlContent || "";
+    editor.dataset.lastValidHtml = editor.innerHTML;
     if (counter) updateCounter(editor, counter, limitMsg, limit);
   }
 
