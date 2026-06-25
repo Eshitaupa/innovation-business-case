@@ -9,9 +9,7 @@
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
-    <symbol id="icon-plus" viewBox="0 0 24 24">
-      <path d="M12 5v14M5 12h14"></path>
-    </symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
     <symbol id="icon-save" viewBox="0 0 24 24">
       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path>
       <path d="M17 21v-8H7v8M7 3v5h8"></path>
@@ -20,9 +18,7 @@
       <path d="M12 20h9"></path>
       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
     </symbol>
-    <symbol id="icon-close" viewBox="0 0 24 24">
-      <path d="M18 6 6 18M6 6l12 12"></path>
-    </symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"></path></symbol>
     <symbol id="icon-refresh" viewBox="0 0 24 24">
       <path d="M21 12a9 9 0 0 1-15.4 6.4L3 16"></path>
       <path d="M3 21v-5h5"></path>
@@ -46,19 +42,15 @@
         <p class="kicker">OGC innovation</p>
         <h1>Innovation Business Case Registry</h1>
       </div>
-
       <div class="top-actions">
         <span id="connectionBadge" class="status-badge">Connecting...</span>
-
         <button id="refreshButton" class="icon-button" type="button" title="Refresh" aria-label="Refresh">
           <svg><use href="#icon-refresh"></use></svg>
         </button>
-
         <button id="exportButton" class="button secondary" type="button">
           <svg><use href="#icon-download"></use></svg>
           Export CSV
         </button>
-
         <button id="newCaseButton" class="button primary" type="button">
           <svg><use href="#icon-plus"></use></svg>
           New case
@@ -68,33 +60,18 @@
 
     <main>
       <section class="metric-strip" aria-label="Portfolio metrics">
-        <article class="metric-card">
-          <span>Total cases</span>
-          <strong id="summaryTotal">0</strong>
-        </article>
-
-        <article class="metric-card">
-          <span>Cost savings</span>
-          <strong id="summarySavings">$0</strong>
-        </article>
-
-        <article class="metric-card">
-          <span>Avg efficiency</span>
-          <strong id="summaryEfficiency">0%</strong>
-        </article>
-
-        <article class="metric-card">
-          <span>Avg payback</span>
-          <strong id="summaryPayback">0</strong>
-        </article>
+        <article class="metric-card"><span>Total cases</span><strong id="summaryTotal">0</strong></article>
+        <article class="metric-card"><span>Cost savings</span><strong id="summarySavings">$0</strong></article>
+        <article class="metric-card"><span>Avg efficiency</span><strong id="summaryEfficiency">0%</strong></article>
+        <article class="metric-card"><span>Avg payback</span><strong id="summaryPayback">0</strong></article>
       </section>
 
-<section class="table-toolbar" aria-label="Table filters">
-  <label class="search-field">
-    <svg>#icon-search</use></svg>
-    <input id="searchInput" type="search" autocomplete="off" placeholder="Search cases">
-  </label>
-</section>
+      <section class="table-toolbar" aria-label="Table filters">
+        <label class="search-field">
+          <svg><use href="#icon-search"></use></svg>
+          <input id="searchInput" type="search" autocomplete="off" placeholder="Search cases">
+        </label>
+      </section>
 
       <section class="table-panel" aria-label="Innovation business cases">
         <div class="table-scroll">
@@ -102,7 +79,6 @@
             <thead>
               <tr>
                 <th>Business Case Idea</th>
-                <!-- <th>Status</th> -->
                 <th>Owner</th>
                 <th>Value proposition</th>
                 <th>Cost savings</th>
@@ -128,17 +104,14 @@
       <input type="hidden" name="id">
 
       <header class="drawer-header">
-        <div>
-          <p class="kicker">Lean execution canvas</p>
-          <h2 id="drawerTitle">New innovation case</h2>
-        </div>
-
+        <div><h2 id="drawerTitle">New innovation case</h2></div>
         <button id="closeDrawerButton" class="icon-button" type="button" title="Close" aria-label="Close">
           <svg><use href="#icon-close"></use></svg>
         </button>
       </header>
 
       <div class="drawer-body">
+
         <section class="form-section">
           <h3>Overview</h3>
           <div class="form-grid two">
@@ -146,32 +119,15 @@
               <span>Business Case idea</span>
               <input name="ideaName" type="text" required maxlength="120">
             </label>
-<label>
-  <span>Owner</span>
-  <div id="peoplePicker"></div>
-  <input type="hidden" name="personClaims">
-</label>
-
-           <label>
-            <span>Department</span>
-<select name="department"></select>
-</label>
-
-
-            <!-- <label>
-              <span>Status</span>
-              <select name="status">
-                <option value="Intake">Intake</option>
-                <option value="Reviewing">Reviewing</option>
-                <option value="MVP">MVP</option>
-                <option value="Scaling">Scaling</option>
-                <option value="On hold">On hold</option>
-              </select>
-            </label> -->
-            <!-- <label>
-              <span>Status </span>
-<select name="status"></select>
-</label> -->
+            <label>
+              <span>Owner</span>
+              <div id="peoplePicker"></div>
+              <input type="hidden" name="personClaims">
+            </label>
+            <label>
+              <span>Department</span>
+              <select name="department"></select>
+            </label>
           </div>
         </section>
 
@@ -182,12 +138,6 @@
               <span>Pain point users face today</span>
               <textarea name="problemStatement" rows="3"></textarea>
             </label>
-
-            <!-- <label>
-              <span>Scale and business impact</span>
-              <textarea name="scaleBusinessImpact" rows="3"></textarea>
-            </label> -->
-
             <label>
               <span>Current workarounds failing</span>
               <textarea name="currentWorkarounds" rows="3"></textarea>
@@ -202,159 +152,68 @@
               <span>Innovation approach</span>
               <textarea name="proposedSolution" rows="3"></textarea>
             </label>
-
             <label>
               <span>MVP scope</span>
               <textarea name="mvpScope" rows="3"></textarea>
             </label>
-
           </div>
         </section>
-        <section class="form-section">
-          <h3>Stratergic Benefits</h3>
-             <label>
-              <textarea name="valueProposition" rows="3"></textarea>
-            </label>
 
+        <section class="form-section">
+          <h3>Strategic Benefits</h3>
+          <label>
+            <textarea name="valueProposition" rows="3"></textarea>
+          </label>
         </section>
+
         <section class="form-section">
           <h3>Value Proposition</h3>
           <div>
-       <label>
-              <span>Cost savings</span>
-              <input name="costSavings" type="number">
-            </label>
-             <label>
-              <span>Efficiency gain %</span>
-              <input name="efficiencyGain" type="number">
-            </label>
-             <label>
-              <span>Payback period months</span>
-              <input name="paybackMonths" type="number" min="0">
-            </label>
-                <label>
-              <span>Confidence Level </span>
-<select name="confidenceLevel"></select>
-</label>
+            <label><span>Cost savings</span><input name="costSavings" type="number"></label>
+            <label><span>Efficiency gain %</span><input name="efficiencyGain" type="number"></label>
+            <label><span>Payback period months</span><input name="paybackMonths" type="number" min="0"></label>
+            <label><span>Confidence Level</span><select name="confidenceLevel"></select></label>
           </div>
         </section>
+
         <section class="form-section">
           <h3>Key Metrics</h3>
           <div class="form-grid three compact">
-            <label>
-              <span>Active users</span>
-              <input name="activeUsers" type="number" min="0">
-            </label>
-
-            <label>
-              <span>Adoption rate %</span>
-              <input name="adoptionRate" type="number" min="0" max="100">
-            </label>
-
-            <label>
-              <span>Revenue impact</span>
-              <input name="revenueImpact" type="number" min="0">
-            </label>
-
-            <label>
-              <span>Cycle time reduction %</span>
-              <input name="cycleTimeReduction" type="number" min="0" max="100">
-            </label>
-
-            <label>
-              <span>Schedule impact</span>
-              <input name="scheduleImpact" type="number" min="0" max="100">
-            </label>
+            <label><span>Active users</span><input name="activeUsers" type="number" min="0"></label>
+            <label><span>Adoption rate %</span><input name="adoptionRate" type="number" min="0" max="100"></label>
+            <label><span>Revenue impact</span><input name="revenueImpact" type="number" min="0"></label>
+            <label><span>Cycle time reduction %</span><input name="cycleTimeReduction" type="number" min="0" max="100"></label>
+            <label><span>Schedule impact</span><input name="scheduleImpact" type="number" min="0" max="100"></label>
           </div>
         </section>
-        
+
         <section class="form-section">
           <h3>Adoption Criteria</h3>
           <div class="form-grid">
-            <label>
-              <span>Centralized channel</span>
-              <textarea name="goToMarketChannels" rows="3"></textarea>
-            </label>
-
-            <label>
-              <span>Change management and training</span>
-              <textarea name="changeManagement" rows="3"></textarea>
-            </label>
-
-            <label>
-              <span>Phased rollout plan</span>
-              <textarea name="rolloutPlan" rows="3"></textarea>
-            </label>
+            <label><span>Centralized channel</span><textarea name="goToMarketChannels" rows="3"></textarea></label>
+            <label><span>Change management and training</span><textarea name="changeManagement" rows="3"></textarea></label>
+            <label><span>Phased rollout plan</span><textarea name="rolloutPlan" rows="3"></textarea></label>
           </div>
         </section>
-        <!-- <section class="form-section">
-          <h3>Cost Description</h3>
-          <div class="form-grid">
-            <label>
-              <span>Developer Cost</span>
-               <input name="cycleTimeReduction" type="number" min="0" max="100">
-            </label>
-
-            <label>
-              <span>IT Infrastructure cost</span>
-               <input name="cycleTimeReduction" type="number" min="0" max="100">
-            </label>
-
-            <label>
-              <span>SaaS Cost</span>
-              <input name="cycleTimeReduction" type="number" min="0" max="100">
-            </label>
-                 <label>
-              <span>AI Token Cost</span>
-              <input name="cycleTimeReduction" type="number" min="0" max="100">
-            </label>
-          </div>
-        </section> -->
 
         <section class="form-section">
           <h3>Cost Structure</h3>
           <div class="form-grid two compact">
-            <label>
-              <span>Tools and platform charges</span>
-              <input name="toolsPlatformCharges" type="number" min="0">
-            </label>
-
-            <label>
-              <span>License cost</span>
-              <input name="licenseCost" type="number" min="0">
-            </label>
-
-            <label>
-              <span>Development cost</span>
-              <input name="developmentCost" type="number" min="0">
-            </label>
-
-            <label>
-              <span>Support and maintenance</span>
-              <input name="supportMaintenanceCost" type="number" min="0">
-            </label>
-
-            <label>
-              <span>Recurring cost avoidance</span>
-              <input name="recurringCostAvoidance" type="number" min="0">
-            </label>
+            <label><span>Tools and platform charges</span><input name="toolsPlatformCharges" type="number" min="0"></label>
+            <label><span>License cost</span><input name="licenseCost" type="number" min="0"></label>
+            <label><span>Development cost</span><input name="developmentCost" type="number" min="0"></label>
+            <label><span>Support and maintenance</span><input name="supportMaintenanceCost" type="number" min="0"></label>
+            <label><span>Recurring cost avoidance</span><input name="recurringCostAvoidance" type="number" min="0"></label>
           </div>
         </section>
-          <section class="form-section">
-            <h3>Long Term Value Proposition</h3>
-                  <label>
-              <span>Productivity Uplift</span>
-              <input name="productivityUplift" type="number" min="0" max="100">
-            </label>
-                  <label>
-              <span>Margin improvement %</span>
-              <input name="marginImprovement" type="number" min="0" max="100">
-            </label>
-              <label>
-              <span>Scalable to all Disciplines</span>
-              <textarea name="scalabilityNotes" rows="3"></textarea>
-            </label>
-          </section>
+
+        <section class="form-section">
+          <h3>Long Term Value Proposition</h3>
+          <label><span>Productivity Uplift</span><input name="productivityUplift" type="number" min="0" max="100"></label>
+          <label><span>Margin improvement %</span><input name="marginImprovement" type="number" min="0" max="100"></label>
+          <label><span>Scalable to all Disciplines</span><textarea name="scalabilityNotes" rows="3"></textarea></label>
+        </section>
+
       </div>
 
       <footer class="drawer-footer">

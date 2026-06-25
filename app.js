@@ -628,16 +628,11 @@
 // CONFIG
 // =============================================================================
 
-
-
-// =============================================================================
-// CONFIG
-// =============================================================================
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
 
-   listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
+  listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
 
   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
@@ -645,13 +640,11 @@ const CONFIG = {
     id:                     "Id",
     ideaName:               "Title",
     department:             "field_2",
-
     problemStatement:       "field_4",
     currentWorkarounds:     "field_6",
     proposedSolution:       "field_7",
     mvpScope:               "field_8",
     valueProposition:       "field_11",
-
     costSavings:            "field_12",
     efficiencyGain:         "field_13",
     paybackMonths:          "field_14",
@@ -661,11 +654,9 @@ const CONFIG = {
     cycleTimeReduction:     "field_18",
     productivityUplift:     "field_19",
     scheduleImpact:         "field_20",
-
     goToMarketChannels:     "field_21",
     changeManagement:       "field_22",
     rolloutPlan:            "field_23",
-
     toolsPlatformCharges:   "field_24",
     licenseCost:            "field_25",
     developmentCost:        "field_26",
@@ -673,29 +664,36 @@ const CONFIG = {
     recurringCostAvoidance: "field_28",
     marginImprovement:      "field_29",
     scalabilityNotes:       "field_30",
-
     confidenceLevel:        "Confidence_x0020_Level",
     created:                "Created",
     modified:               "Modified"
   },
 
   numberFields: new Set([
-    "costSavings",
-    "efficiencyGain",
-    "paybackMonths",
-    "activeUsers",
-    "adoptionRate",
-    "revenueImpact",
-    "cycleTimeReduction",
-    "productivityUplift",
-    "scheduleImpact",
-    "toolsPlatformCharges",
-    "licenseCost",
-    "developmentCost",
-    "supportMaintenanceCost",
-    "recurringCostAvoidance",
-    "marginImprovement"
+    "costSavings","efficiencyGain","paybackMonths","activeUsers","adoptionRate",
+    "revenueImpact","cycleTimeReduction","productivityUplift","scheduleImpact",
+    "toolsPlatformCharges","licenseCost","developmentCost","supportMaintenanceCost",
+    "recurringCostAvoidance","marginImprovement"
   ]),
+
+  // Rich text fields (textarea → contenteditable editor)
+  richTextFields: new Set([
+    "problemStatement","currentWorkarounds","proposedSolution","mvpScope",
+    "valueProposition","goToMarketChannels","changeManagement","rolloutPlan","scalabilityNotes"
+  ]),
+
+  // Max character limits for rich text fields
+  richTextLimits: {
+    problemStatement:   2000,
+    currentWorkarounds: 2000,
+    proposedSolution:   3000,
+    mvpScope:           2000,
+    valueProposition:   3000,
+    goToMarketChannels: 2000,
+    changeManagement:   2000,
+    rolloutPlan:        2000,
+    scalabilityNotes:   2000
+  },
 
   fallbackChoices: {
     department: [""],
@@ -714,7 +712,8 @@ const state = {
   search:         "",
   busy:           false,
   toastTimer:     0,
-  selectedPerson: null 
+  selectedPerson: null,
+  richTextValues: {}  // stores HTML content for rich text editors
 };
 
 const els = {};
@@ -727,10 +726,179 @@ document.addEventListener("DOMContentLoaded", init);
 async function init() {
   cacheElements();
   bindEvents();
+  buildRichTextEditors();
   await loadFromFlow();
   populateDropdowns();
   buildPeopleSelect();
   render();
+}
+
+// =============================================================================
+// RICH TEXT EDITOR
+// =============================================================================
+function buildRichTextEditors() {
+  CONFIG.richTextFields.forEach(fieldName => {
+    const textarea = els.caseForm?.elements[fieldName];
+    if (!textarea) return;
+
+    const limit = CONFIG.richTextLimits[fieldName] || 2000;
+
+    // Create wrapper
+    const wrapper = document.createElement("div");
+    wrapper.className = "rich-editor-wrapper";
+    wrapper.setAttribute("data-field", fieldName);
+
+    // Toolbar
+    const toolbar = document.createElement("div");
+    toolbar.className = "rich-toolbar";
+    toolbar.innerHTML = `
+      <button type="button" class="rich-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+      <button type="button" class="rich-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+      <button type="button" class="rich-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+      <span class="rich-sep"></span>
+      <button type="button" class="rich-btn" data-cmd="insertUnorderedList" title="Bullet list">&#8226; List</button>
+      <button type="button" class="rich-btn" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
+      <span class="rich-sep"></span>
+      <button type="button" class="rich-btn" data-cmd="removeFormat" title="Clear formatting">&#10005; Clear</button>
+    `;
+
+    // Content editable area
+    const editor = document.createElement("div");
+    editor.className = "rich-editor";
+    editor.contentEditable = "true";
+    editor.setAttribute("role", "textbox");
+    editor.setAttribute("aria-multiline", "true");
+    editor.setAttribute("data-field", fieldName);
+    editor.setAttribute("data-limit", limit);
+
+    // Character counter
+    const counter = document.createElement("div");
+    counter.className = "rich-counter";
+    counter.id = `counter-${fieldName}`;
+    counter.textContent = `0 / ${limit}`;
+
+    // Limit warning popup
+    const limitMsg = document.createElement("div");
+    limitMsg.className = "rich-limit-msg";
+    limitMsg.id = `limit-${fieldName}`;
+    limitMsg.textContent = `Maximum ${limit.toLocaleString()} characters allowed.`;
+
+    wrapper.appendChild(toolbar);
+    wrapper.appendChild(editor);
+    wrapper.appendChild(counter);
+    wrapper.appendChild(limitMsg);
+
+    // Insert before the original textarea and hide it
+    textarea.parentNode.insertBefore(wrapper, textarea);
+    textarea.style.display = "none";
+
+    // Toolbar button events
+    toolbar.querySelectorAll(".rich-btn[data-cmd]").forEach(btn => {
+      btn.addEventListener("mousedown", e => {
+        e.preventDefault();
+        const cmd = btn.getAttribute("data-cmd");
+        document.execCommand(cmd, false, null);
+        editor.focus();
+        updateCounter(editor, counter, limitMsg, limit);
+        syncEditorToTextarea(fieldName);
+      });
+    });
+
+    // Input events
+    editor.addEventListener("input", () => {
+      enforceLimit(editor, counter, limitMsg, limit);
+      syncEditorToTextarea(fieldName);
+    });
+
+    editor.addEventListener("paste", e => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+      document.execCommand("insertText", false, text);
+    });
+
+    // Update toolbar active states on selection
+    editor.addEventListener("keyup", () => updateToolbarState(toolbar));
+    editor.addEventListener("mouseup", () => updateToolbarState(toolbar));
+  });
+}
+
+function enforceLimit(editor, counter, limitMsg, limit) {
+  const text = editor.innerText || "";
+  const len = text.replace(/\n$/, "").length;
+  counter.textContent = `${len} / ${limit}`;
+
+  if (len > limit) {
+    counter.classList.add("over");
+    limitMsg.classList.add("show");
+    // Trim to limit
+    trimEditorToLimit(editor, limit);
+    setTimeout(() => limitMsg.classList.remove("show"), 3000);
+  } else {
+    counter.classList.remove("over");
+    limitMsg.classList.remove("show");
+  }
+}
+
+function updateCounter(editor, counter, limitMsg, limit) {
+  const text = editor.innerText || "";
+  const len = text.replace(/\n$/, "").length;
+  counter.textContent = `${len} / ${limit}`;
+  if (len > limit) {
+    counter.classList.add("over");
+    limitMsg.classList.add("show");
+    setTimeout(() => limitMsg.classList.remove("show"), 3000);
+  } else {
+    counter.classList.remove("over");
+    limitMsg.classList.remove("show");
+  }
+}
+
+function trimEditorToLimit(editor, limit) {
+  let text = editor.innerText || "";
+  if (text.replace(/\n$/, "").length <= limit) return;
+  // Restore previous valid state from selection
+  document.execCommand("undo");
+}
+
+function updateToolbarState(toolbar) {
+  const cmds = ["bold", "italic", "underline"];
+  cmds.forEach(cmd => {
+    const btn = toolbar.querySelector(`[data-cmd="${cmd}"]`);
+    if (btn) {
+      btn.classList.toggle("active", document.queryCommandState(cmd));
+    }
+  });
+}
+
+function syncEditorToTextarea(fieldName) {
+  const editor = document.querySelector(`.rich-editor[data-field="${fieldName}"]`);
+  const textarea = els.caseForm?.elements[fieldName];
+  if (editor && textarea) {
+    textarea.value = editor.innerHTML;
+    state.richTextValues[fieldName] = editor.innerHTML;
+  }
+}
+
+function setEditorContent(fieldName, htmlContent) {
+  const editor = document.querySelector(`.rich-editor[data-field="${fieldName}"]`);
+  const counter = document.getElementById(`counter-${fieldName}`);
+  const limitMsg = document.getElementById(`limit-${fieldName}`);
+  const limit = CONFIG.richTextLimits[fieldName] || 2000;
+
+  if (editor) {
+    editor.innerHTML = htmlContent || "";
+    if (counter) updateCounter(editor, counter, limitMsg, limit);
+  }
+
+  const textarea = els.caseForm?.elements[fieldName];
+  if (textarea) textarea.value = htmlContent || "";
+}
+
+function clearAllEditors() {
+  CONFIG.richTextFields.forEach(fieldName => {
+    setEditorContent(fieldName, "");
+  });
+  state.richTextValues = {};
 }
 
 // =============================================================================
@@ -747,7 +915,6 @@ async function loadFromFlow() {
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data = await res.json();
 
-    // Resolve choices — prefer what the flow sends, fall back to CONFIG defaults
     if (data.choices) {
       state.choices.confidenceLevel =
         Array.isArray(data.choices.confidenceLevel) && data.choices.confidenceLevel.length
@@ -767,8 +934,6 @@ async function loadFromFlow() {
     state.allUsers = Array.isArray(data.users)
       ? data.users.filter(u => u.Email)
       : [];
-
-    console.log(`✓ Loaded ${state.allUsers.length} site users`);
 
     state.records = extractRows(data).map(mapItem);
     state.mode    = "flow";
@@ -866,14 +1031,10 @@ function mapItem(item) {
 
 // =============================================================================
 // PEOPLE PICKER
-// Built entirely with DOM API — no innerHTML — so option values are never
-// corrupted by whitespace. The <select> list only appears after ≥2 chars.
 // =============================================================================
 function buildPeopleSelect() {
   const container = document.getElementById("peoplePicker");
   if (!container) return;
-
-  // Clear any previous build (e.g. if called after hot-reload)
   container.innerHTML = "";
 
   const filterInput = document.createElement("input");
@@ -894,7 +1055,6 @@ function buildPeopleSelect() {
 
   filterInput.addEventListener("input", () => {
     const q = filterInput.value.trim().toLowerCase();
-
     if (q.length < 2) {
       sel.style.display = "none";
       while (sel.firstChild) sel.removeChild(sel.firstChild);
@@ -925,7 +1085,6 @@ function buildPeopleSelect() {
         sel.appendChild(opt);
       });
 
-      // Restore highlight if user already chose someone
       if (state.selectedPerson?.claims) {
         for (let i = 0; i < sel.options.length; i++) {
           if (sel.options[i].value === state.selectedPerson.claims) {
@@ -998,12 +1157,12 @@ function resetPersonPicker() {
 // DROPDOWNS
 // =============================================================================
 function populateDropdowns() {
-  const deptSel    = document.querySelector('select[name="department"]');
-  const confSel    = document.querySelector('select[name="confidenceLevel"]');
+  const deptSel = document.querySelector('select[name="department"]');
+  const confSel = document.querySelector('select[name="confidenceLevel"]');
 
-  // Clear first
-  if (deptSel)    deptSel.innerHTML    = "";
-  if (confSel)    confSel.innerHTML    = "";
+  if (deptSel) deptSel.innerHTML = "";
+  if (confSel) confSel.innerHTML = "";
+
   state.choices.department.forEach(c => {
     if (!c) return;
     const o = document.createElement("option");
@@ -1093,7 +1252,7 @@ function renderTable() {
     <tr>
       <td class="idea-cell">${esc(r.ideaName)}</td>
       <td>${esc(r.personDisplayName)}</td>
-      <td class="text-cell">${esc(r.valueProposition)}</td>
+      <td class="text-cell">${stripHtml(r.valueProposition)}</td>
       <td class="number-cell">${fmt$(r.costSavings)}</td>
       <td class="number-cell">${fmtPct(r.efficiencyGain)}</td>
       <td class="number-cell">${fmtMo(r.paybackMonths)}</td>
@@ -1135,6 +1294,8 @@ function filtered() {
 function openDrawer(record = null) {
   els.caseForm.reset();
   resetPersonPicker();
+  clearAllEditors();
+  clearAllFieldErrors();
   els.drawerTitle.textContent = record ? "Edit innovation case" : "New innovation case";
 
   if (record) {
@@ -1142,7 +1303,13 @@ function openDrawer(record = null) {
       const ctrl = els.caseForm.elements[key];
       if (!ctrl) continue;
       const v = record[key];
-      if (v != null) ctrl.value = v;
+      if (v == null) continue;
+
+      if (CONFIG.richTextFields.has(key)) {
+        setEditorContent(key, v);
+      } else {
+        ctrl.value = v;
+      }
     }
     els.caseForm.elements.id.value = record.id;
     fillPersonPicker(record);
@@ -1155,6 +1322,7 @@ function openDrawer(record = null) {
   els.drawerBackdrop.hidden = false;
   els.drawer.classList.add("open");
   els.drawer.setAttribute("aria-hidden", "false");
+  document.body.classList.add("drawer-open");
   setTimeout(() => els.caseForm.elements.ideaName?.focus(), 30);
 }
 
@@ -1162,7 +1330,162 @@ function closeDrawer() {
   els.drawer.classList.remove("open");
   els.drawer.setAttribute("aria-hidden", "true");
   els.drawerBackdrop.hidden = true;
+  document.body.classList.remove("drawer-open");
   resetPersonPicker();
+  clearAllFieldErrors();
+}
+
+// =============================================================================
+// VALIDATION & ERROR DISPLAY
+// =============================================================================
+const FIELD_LABELS = {
+  ideaName:               "Business Case idea",
+  department:             "Department",
+  problemStatement:       "Pain point users face today",
+  currentWorkarounds:     "Current workarounds failing",
+  proposedSolution:       "Innovation approach",
+  mvpScope:               "MVP scope",
+  valueProposition:       "Strategic Benefits",
+  costSavings:            "Cost savings",
+  efficiencyGain:         "Efficiency gain %",
+  paybackMonths:          "Payback period months",
+  adoptionRate:           "Adoption rate %",
+  revenueImpact:          "Revenue impact",
+  confidenceLevel:        "Confidence Level"
+};
+
+function validateForm(record) {
+  const errors = [];
+
+  if (!record.ideaName?.trim()) {
+    errors.push({ field: "ideaName", message: "Business Case idea is required." });
+  }
+
+  // Validate number ranges
+  const pctFields = [
+    { key: "efficiencyGain", label: "Efficiency gain %" },
+    { key: "adoptionRate",   label: "Adoption rate %" },
+    { key: "cycleTimeReduction", label: "Cycle time reduction %" },
+    { key: "scheduleImpact", label: "Schedule impact" },
+    { key: "productivityUplift", label: "Productivity uplift %" },
+    { key: "marginImprovement", label: "Margin improvement %" }
+  ];
+
+  pctFields.forEach(({ key, label }) => {
+    const v = Number(record[key]);
+    if (record[key] !== "" && record[key] !== null && (v < 0 || v > 100)) {
+      errors.push({ field: key, message: `${label} must be between 0 and 100.` });
+    }
+  });
+
+  const posFields = [
+    { key: "costSavings",          label: "Cost savings" },
+    { key: "paybackMonths",        label: "Payback period months" },
+    { key: "activeUsers",          label: "Active users" },
+    { key: "revenueImpact",        label: "Revenue impact" },
+    { key: "toolsPlatformCharges", label: "Tools and platform charges" },
+    { key: "licenseCost",          label: "License cost" },
+    { key: "developmentCost",      label: "Development cost" },
+    { key: "supportMaintenanceCost", label: "Support and maintenance" },
+    { key: "recurringCostAvoidance", label: "Recurring cost avoidance" }
+  ];
+
+  posFields.forEach(({ key, label }) => {
+    const v = Number(record[key]);
+    if (record[key] !== "" && record[key] !== null && v < 0) {
+      errors.push({ field: key, message: `${label} cannot be negative.` });
+    }
+  });
+
+  return errors;
+}
+
+function showFieldErrors(errors) {
+  clearAllFieldErrors();
+
+  errors.forEach(({ field, message }) => {
+    // Mark the input/editor red
+    const ctrl = els.caseForm.elements[field];
+    if (ctrl) {
+      ctrl.classList.add("field-error");
+      // Add error message below
+      const errSpan = document.createElement("span");
+      errSpan.className = "field-error-msg";
+      errSpan.textContent = message;
+      ctrl.parentNode.appendChild(errSpan);
+    }
+
+    // For rich text editors
+    if (CONFIG.richTextFields.has(field)) {
+      const editor = document.querySelector(`.rich-editor[data-field="${field}"]`);
+      if (editor) {
+        editor.classList.add("field-error");
+        const wrapper = editor.closest(".rich-editor-wrapper");
+        if (wrapper) {
+          const existing = wrapper.querySelector(".field-error-msg");
+          if (!existing) {
+            const errSpan = document.createElement("span");
+            errSpan.className = "field-error-msg";
+            errSpan.textContent = message;
+            wrapper.appendChild(errSpan);
+          }
+        }
+      }
+    }
+  });
+}
+
+function clearAllFieldErrors() {
+  els.caseForm?.querySelectorAll(".field-error").forEach(el => el.classList.remove("field-error"));
+  els.caseForm?.querySelectorAll(".field-error-msg").forEach(el => el.remove());
+}
+
+function showErrorModal(errors) {
+  // Remove any existing modal
+  document.getElementById("errorModal")?.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "errorModal";
+  modal.className = "error-modal";
+  modal.setAttribute("role", "alertdialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-labelledby", "errorModalTitle");
+
+  const errorList = errors.map(e =>
+    `<li><span class="err-field">${esc(FIELD_LABELS[e.field] || e.field)}:</span> ${esc(e.message)}</li>`
+  ).join("");
+
+  modal.innerHTML = `
+    <div class="error-modal-box">
+      <div class="error-modal-header">
+        <span class="error-modal-icon">⚠</span>
+        <h3 id="errorModalTitle">Please fix these errors</h3>
+        <button class="icon-button error-modal-close" type="button" aria-label="Close">
+          <svg><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <ul class="error-list">${errorList}</ul>
+      <button class="button primary error-modal-ok" type="button">OK, I'll fix these</button>
+    </div>
+  `;
+
+  modal.querySelector(".error-modal-close").addEventListener("click", () => modal.remove());
+  modal.querySelector(".error-modal-ok").addEventListener("click", () => {
+    modal.remove();
+    // Scroll to first error field
+    const firstError = els.caseForm.querySelector(".field-error, .rich-editor.field-error");
+    if (firstError) {
+      firstError.scrollIntoView({ behavior: "smooth", block: "center" });
+      firstError.focus?.();
+    }
+  });
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+
+  // Append to the drawer so it appears over it
+  els.drawer.appendChild(modal);
+
+  // Focus the OK button
+  setTimeout(() => modal.querySelector(".error-modal-ok")?.focus(), 50);
 }
 
 // =============================================================================
@@ -1174,9 +1497,10 @@ async function saveCurrentCase(e) {
   const fd     = new FormData(els.caseForm);
   const record = formToRecord(fd);
 
-  if (!record.ideaName.trim()) {
-    showToast("Business case idea is required.");
-    els.caseForm.elements.ideaName?.focus();
+  const errors = validateForm(record);
+  if (errors.length) {
+    showFieldErrors(errors);
+    showErrorModal(errors);
     return;
   }
 
@@ -1191,10 +1515,41 @@ async function saveCurrentCase(e) {
     showToast(record.id ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
   } catch (err) {
     console.error("Save failed:", err);
-    showToast("Save failed: " + err.message);
+    // Parse error to identify field if possible
+    const errMsg = err.message || "";
+    const saveErrors = parseSaveError(errMsg);
+    if (saveErrors.length) {
+      showFieldErrors(saveErrors);
+      showErrorModal(saveErrors);
+    } else {
+      showErrorModal([{ field: "general", message: "Save failed: " + errMsg }]);
+      showToast("⚠ Save failed — see error details.");
+    }
   } finally {
     setBusy(false);
   }
+}
+
+function parseSaveError(errMsg) {
+  const lower = errMsg.toLowerCase();
+  const errors = [];
+
+  // Try to match known field names in error
+  const fieldPatterns = [
+    { pattern: /title/i,         field: "ideaName",      label: "Business Case idea" },
+    { pattern: /field_12|cost.sav/i, field: "costSavings",  label: "Cost savings" },
+    { pattern: /field_13|effici/i,   field: "efficiencyGain", label: "Efficiency gain %" },
+    { pattern: /field_14|payback/i,  field: "paybackMonths",  label: "Payback period months" },
+    { pattern: /field_16|adoption/i, field: "adoptionRate",    label: "Adoption rate %" }
+  ];
+
+  fieldPatterns.forEach(({ pattern, field, label }) => {
+    if (pattern.test(errMsg)) {
+      errors.push({ field, message: `${label}: ${errMsg}` });
+    }
+  });
+
+  return errors;
 }
 
 async function saveViaFlow(payload) {
@@ -1222,7 +1577,12 @@ function buildSharePointPayload(record) {
     const s   = (val == null ? "" : String(val)).trim();
     if (s === "") continue;
 
-    payload[spField] = CONFIG.numberFields.has(jsKey) ? Number(s) : s;
+    // For rich text, strip HTML for number fields; keep for text fields
+    if (CONFIG.numberFields.has(jsKey)) {
+      payload[spField] = Number(s);
+    } else {
+      payload[spField] = s;
+    }
   }
 
   if (record.personClaims) {
@@ -1289,7 +1649,13 @@ function exportCsv() {
   const rows = filtered();
   const csv  = [
     cols.map(([, l]) => csvQ(l)).join(","),
-    ...rows.map(r => cols.map(([k]) => csvQ(r[k])).join(","))
+    ...rows.map(r => {
+      return cols.map(([k]) => {
+        // Strip HTML tags for CSV export
+        const val = CONFIG.richTextFields.has(k) ? stripHtml(r[k]) : r[k];
+        return csvQ(val);
+      }).join(",");
+    })
   ].join("\r\n");
 
   const a = Object.assign(document.createElement("a"), {
@@ -1304,6 +1670,11 @@ function exportCsv() {
 // =============================================================================
 // UTILITIES
 // =============================================================================
+function stripHtml(html) {
+  if (!html) return "";
+  return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+}
+
 function setBusy(v) {
   state.busy = v;
   document.body.classList.toggle("is-busy", v);
@@ -1374,25 +1745,26 @@ function csvQ(v) {
   const t = v == null ? "" : String(v);
   return `"${t.replace(/"/g, '""')}"`;
 }
+
+// =============================================================================
+// CONFIG
+// =============================================================================
 // const CONFIG = {
 //   listTitle: "OGC Innovation Business Case",
 //   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
 
-//   listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
+//    listFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
+
 //   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
 //   fieldMap: {
 //     id:                     "Id",
 //     ideaName:               "Title",
 //     department:             "field_2",
-//     status:                 "field_3",
 //     problemStatement:       "field_4",
-//     scaleBusinessImpact:    "field_5",
 //     currentWorkarounds:     "field_6",
 //     proposedSolution:       "field_7",
 //     mvpScope:               "field_8",
-//     enabler:                "field_9",
-//     unfairAdvantage:        "field_10",
 //     valueProposition:       "field_11",
 //     costSavings:            "field_12",
 //     efficiencyGain:         "field_13",
@@ -1403,9 +1775,11 @@ function csvQ(v) {
 //     cycleTimeReduction:     "field_18",
 //     productivityUplift:     "field_19",
 //     scheduleImpact:         "field_20",
+
 //     goToMarketChannels:     "field_21",
 //     changeManagement:       "field_22",
 //     rolloutPlan:            "field_23",
+
 //     toolsPlatformCharges:   "field_24",
 //     licenseCost:            "field_25",
 //     developmentCost:        "field_26",
@@ -1413,23 +1787,33 @@ function csvQ(v) {
 //     recurringCostAvoidance: "field_28",
 //     marginImprovement:      "field_29",
 //     scalabilityNotes:       "field_30",
-//     confidenceLevel:"Confidence_x0020_Level",
+
+//     confidenceLevel:        "Confidence_x0020_Level",
 //     created:                "Created",
 //     modified:               "Modified"
 //   },
 
 //   numberFields: new Set([
-//     "costSavings", "efficiencyGain", "paybackMonths", "activeUsers",
-//     "adoptionRate", "revenueImpact", "cycleTimeReduction", "productivityUplift","scheduleImpact", 
-//     "toolsPlatformCharges", "licenseCost", "developmentCost",
-//     "supportMaintenanceCost", "recurringCostAvoidance", "marginImprovement"
+//     "costSavings",
+//     "efficiencyGain",
+//     "paybackMonths",
+//     "activeUsers",
+//     "adoptionRate",
+//     "revenueImpact",
+//     "cycleTimeReduction",
+//     "productivityUplift",
+//     "scheduleImpact",
+//     "toolsPlatformCharges",
+//     "licenseCost",
+//     "developmentCost",
+//     "supportMaintenanceCost",
+//     "recurringCostAvoidance",
+//     "marginImprovement"
 //   ]),
 
-
 //   fallbackChoices: {
-//     department: ["OGC"],
-//     status: ["Intake", "Reviewing", "MVP", "Scaling", "On hold"],
-//     confidenceLevel:["High", "Low", "Moderate"],
+//     department: [""],
+//     confidenceLevel: ["High", "Moderate", "Low"]
 //   }
 // };
 
@@ -1439,13 +1823,12 @@ function csvQ(v) {
 // const state = {
 //   records:        [],
 //   allUsers:       [],
-//   choices:        { department: [], status: [],confidenceLevel:[] },
+//   choices: { department: [], confidenceLevel: [] },
 //   mode:           "connecting",
 //   search:         "",
-//   statusFilter:   "All",
 //   busy:           false,
 //   toastTimer:     0,
-//   selectedPerson: null   // { displayName, email, claims }
+//   selectedPerson: null 
 // };
 
 // const els = {};
@@ -1471,43 +1854,46 @@ function csvQ(v) {
 //   setBusy(true);
 //   try {
 //     const res = await fetch(CONFIG.listFlowUrl, {
-//       method: "POST",
+//       method:  "POST",
 //       headers: { "Content-Type": "application/json" },
-//       body: JSON.stringify({})
+//       body:    JSON.stringify({})
 //     });
 //     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
 //     const data = await res.json();
 
-//     if (data.choices && Array.isArray(data.choices.status) && data.choices.status.length) {
-//       state.choices.status     = data.choices.status;
-      
-// state.choices.confidenceLevel = Array.isArray(data.choices.confidenceLevel) && data.choices.confidenceLevel.length
-//   ? data.choices.confidenceLevel
-//   : CONFIG.fallbackChoices.confidenceLevel;
+//     // Resolve choices — prefer what the flow sends, fall back to CONFIG defaults
+//     if (data.choices) {
+//       state.choices.confidenceLevel =
+//         Array.isArray(data.choices.confidenceLevel) && data.choices.confidenceLevel.length
+//           ? data.choices.confidenceLevel
+//           : [...CONFIG.fallbackChoices.confidenceLevel];
 
-//       state.choices.department = Array.isArray(data.choices.department)
-//         ? data.choices.department : CONFIG.fallbackChoices.department;
+//       state.choices.department =
+//         Array.isArray(data.choices.department) && data.choices.department.length
+//           ? data.choices.department
+//           : [...CONFIG.fallbackChoices.department];
 //     } else {
 //       const rows = extractRows(data);
-//       state.choices.status     = uniqueChoices(rows, "field_3") || CONFIG.fallbackChoices.status;
-//       state.choices.department = uniqueChoices(rows, "field_2") || CONFIG.fallbackChoices.department;
-//       state.choices.confidenceLevel     = uniqueChoices(rows, "Confidence_x0020_Level") || CONFIG.fallbackChoices.confidenceLevel;
+//       state.choices.department     = uniqueChoices(rows, "field_2")                 || [...CONFIG.fallbackChoices.department];
+//       state.choices.confidenceLevel = uniqueChoices(rows, "Confidence_x0020_Level") || [...CONFIG.fallbackChoices.confidenceLevel];
 //     }
 
-//     if (Array.isArray(data.users)) {
-//       state.allUsers = data.users.filter(u => u.Email);
-//       console.log(`✓ Loaded ${state.allUsers.length} site users`);
-//     } else {
-//       state.allUsers = [];
-//     }
+//     state.allUsers = Array.isArray(data.users)
+//       ? data.users.filter(u => u.Email)
+//       : [];
+
+//     console.log(`✓ Loaded ${state.allUsers.length} site users`);
 
 //     state.records = extractRows(data).map(mapItem);
-//     state.mode = "flow";
+//     state.mode    = "flow";
 //   } catch (err) {
 //     console.error("Flow load failed:", err);
-//     state.records = [];
+//     state.records  = [];
 //     state.allUsers = [];
-//     state.choices = { department: [...CONFIG.fallbackChoices.department], status: [...CONFIG.fallbackChoices.status], confidenceLevel: [...CONFIG.fallbackChoices.confidenceLevel] };
+//     state.choices  = {
+//       department:     [...CONFIG.fallbackChoices.department],
+//       confidenceLevel: [...CONFIG.fallbackChoices.confidenceLevel]
+//     };
 //     state.mode = "error";
 //     showToast("⚠ Could not load SharePoint data — " + err.message);
 //   } finally {
@@ -1519,15 +1905,16 @@ function csvQ(v) {
 //   setBusy(true);
 //   try {
 //     const res = await fetch(CONFIG.listFlowUrl, {
-//       method: "POST",
+//       method:  "POST",
 //       headers: { "Content-Type": "application/json" },
-//       body: JSON.stringify({})
+//       body:    JSON.stringify({})
 //     });
 //     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
-//     const data = await res.json();
+//     const data    = await res.json();
 //     state.records = extractRows(data).map(mapItem);
-//     state.mode = "flow";
+//     state.mode    = "flow";
 //   } catch (err) {
+//     console.error("Reload failed:", err);
 //     showToast("⚠ Could not refresh data");
 //   } finally {
 //     setBusy(false);
@@ -1558,7 +1945,6 @@ function csvQ(v) {
 //     personEmail:            p?.Email       || p?.email       || "",
 //     personClaims:           p?.Claims      || p?.claims      || "",
 //     department:             choiceText(item.field_2),
-//     status:                 choiceText(item.field_3) || "Intake",
 //     problemStatement:       item.field_4  || "",
 //     scaleBusinessImpact:    item.field_5  || "",
 //     currentWorkarounds:     item.field_6  || "",
@@ -1586,34 +1972,33 @@ function csvQ(v) {
 //     recurringCostAvoidance: numOrZero(item.field_28),
 //     marginImprovement:      numOrZero(item.field_29),
 //     scalabilityNotes:       item.field_30 || "",
-//     confidenceLevel:         choiceText(item.Confidence_x0020_Level),
+//     confidenceLevel:        choiceText(item.Confidence_x0020_Level),
 //     created:                item.Created  || "",
 //     modified:               item.Modified || ""
 //   };
 // }
 
 // // =============================================================================
-// // PEOPLE PICKER — filter text input + native <select> list
-// // Built entirely with DOM API (no innerHTML) so option values have no
-// // whitespace corruption. The select only appears after 1+ chars are typed.
+// // PEOPLE PICKER
+// // Built entirely with DOM API — no innerHTML — so option values are never
+// // corrupted by whitespace. The <select> list only appears after ≥2 chars.
 // // =============================================================================
 // function buildPeopleSelect() {
 //   const container = document.getElementById("peoplePicker");
 //   if (!container) return;
 
+//   // Clear any previous build (e.g. if called after hot-reload)
 //   container.innerHTML = "";
 
-//   // Filter input
 //   const filterInput = document.createElement("input");
-//   filterInput.type = "text";
-//   filterInput.id = "personFilterInput";
+//   filterInput.type        = "text";
+//   filterInput.id          = "personFilterInput";
 //   filterInput.placeholder = "Type name or email…";
 //   filterInput.autocomplete = "off";
 //   filterInput.setAttribute("aria-label", "Search for a person");
 
-//   // Select list (hidden until filter has content)
 //   const sel = document.createElement("select");
-//   sel.id = "personSelect";
+//   sel.id   = "personSelect";
 //   sel.size = 4;
 //   sel.setAttribute("aria-label", "Select a person");
 //   sel.style.cssText = "display:none;width:100%;";
@@ -1621,7 +2006,6 @@ function csvQ(v) {
 //   container.appendChild(filterInput);
 //   container.appendChild(sel);
 
-//   // ── Filter handler ──
 //   filterInput.addEventListener("input", () => {
 //     const q = filterInput.value.trim().toLowerCase();
 
@@ -1638,25 +2022,24 @@ function csvQ(v) {
 //       )
 //       .slice(0, 50);
 
-//     // Rebuild options via DOM — no innerHTML / no template literals
 //     while (sel.firstChild) sel.removeChild(sel.firstChild);
 
 //     if (!matches.length) {
 //       const empty = document.createElement("option");
-//       empty.disabled = true;
+//       empty.disabled    = true;
 //       empty.textContent = "No results found";
 //       sel.appendChild(empty);
 //     } else {
-//       matches.forEach((u, i) => {
+//       matches.forEach(u => {
 //         const opt = document.createElement("option");
-//         opt.value = u.LoginName;                        // exact string, no whitespace
+//         opt.value = u.LoginName;
 //         opt.setAttribute("data-name",  u.Title || "");
 //         opt.setAttribute("data-email", u.Email || "");
 //         opt.textContent = (u.Title || "") + " — " + (u.Email || "");
 //         sel.appendChild(opt);
 //       });
 
-//       // Restore previous selection highlight if still present
+//       // Restore highlight if user already chose someone
 //       if (state.selectedPerson?.claims) {
 //         for (let i = 0; i < sel.options.length; i++) {
 //           if (sel.options[i].value === state.selectedPerson.claims) {
@@ -1670,23 +2053,23 @@ function csvQ(v) {
 //     sel.style.display = "block";
 //   });
 
-// sel.addEventListener("change", () => {
-//   const opt = sel.options[sel.selectedIndex];
-//   if (!opt || opt.disabled) return;
+//   sel.addEventListener("change", () => {
+//     const opt = sel.options[sel.selectedIndex];
+//     if (!opt || opt.disabled) return;
 
-//   const claims = opt.value;
-//   const displayName = opt.getAttribute("data-name") || "";
-//   const email = opt.getAttribute("data-email") || "";
+//     const claims      = opt.value;
+//     const displayName = opt.getAttribute("data-name")  || "";
+//     const email       = opt.getAttribute("data-email") || "";
 
-//   state.selectedPerson = { displayName, email, claims };
+//     state.selectedPerson = { displayName, email, claims };
 
-//   const hiddenField = els.caseForm && els.caseForm.elements.personClaims;
-//   if (hiddenField) hiddenField.value = claims;
+//     const hiddenField = els.caseForm?.elements.personClaims;
+//     if (hiddenField) hiddenField.value = claims;
 
-//   filterInput.value = displayName || email;
-//   sel.style.display = "none";
-//   sel.innerHTML = "";
-// });
+//     filterInput.value = displayName || email;
+//     sel.style.display = "none";
+//     while (sel.firstChild) sel.removeChild(sel.firstChild);
+//   });
 // }
 
 // function fillPersonPicker(record) {
@@ -1700,17 +2083,19 @@ function csvQ(v) {
 
 //   const filterInput = document.getElementById("personFilterInput");
 //   const sel         = document.getElementById("personSelect");
-
 //   if (!filterInput || !sel) return;
+
 //   filterInput.value = record.personDisplayName || record.personEmail;
-//   sel.innerHTML = "";
+//   while (sel.firstChild) sel.removeChild(sel.firstChild);
 //   sel.style.display = "none";
 
-//   const hiddenField = els.caseForm && els.caseForm.elements.personClaims;
+//   const hiddenField = els.caseForm?.elements.personClaims;
 //   if (hiddenField) hiddenField.value = record.personClaims;
 // }
+
 // function resetPersonPicker() {
 //   state.selectedPerson = null;
+
 //   const filterInput = document.getElementById("personFilterInput");
 //   const sel         = document.getElementById("personSelect");
 //   if (filterInput) filterInput.value = "";
@@ -1718,7 +2103,8 @@ function csvQ(v) {
 //     while (sel.firstChild) sel.removeChild(sel.firstChild);
 //     sel.style.display = "none";
 //   }
-//   const hiddenField = els.caseForm && els.caseForm.elements.personClaims;
+
+//   const hiddenField = els.caseForm?.elements.personClaims;
 //   if (hiddenField) hiddenField.value = "";
 // }
 
@@ -1727,33 +2113,23 @@ function csvQ(v) {
 // // =============================================================================
 // function populateDropdowns() {
 //   const deptSel    = document.querySelector('select[name="department"]');
-//   const statusSel  = document.querySelector('select[name="status"]');
-//   const statusFilt = document.getElementById("statusFilter");
 //   const confSel    = document.querySelector('select[name="confidenceLevel"]');
+
+//   // Clear first
 //   if (deptSel)    deptSel.innerHTML    = "";
 //   if (confSel)    confSel.innerHTML    = "";
-//   if (statusSel)  statusSel.innerHTML  = "";
-//   if (statusFilt) statusFilt.innerHTML = '<option value="All">All statuses</option>';
-
 //   state.choices.department.forEach(c => {
 //     if (!c) return;
 //     const o = document.createElement("option");
 //     o.value = o.textContent = c;
 //     deptSel?.appendChild(o);
 //   });
+
 //   (state.choices.confidenceLevel || []).forEach(c => {
 //     if (!c) return;
 //     const o = document.createElement("option");
 //     o.value = o.textContent = c;
 //     confSel?.appendChild(o);
-//   });
-
-//   state.choices.status.forEach(c => {
-//     if (!c) return;
-//     const o1 = document.createElement("option"); o1.value = o1.textContent = c;
-//     const o2 = document.createElement("option"); o2.value = o2.textContent = c;
-//     statusSel?.appendChild(o1);
-//     statusFilt?.appendChild(o2);
 //   });
 // }
 
@@ -1763,37 +2139,36 @@ function csvQ(v) {
 // function cacheElements() {
 //   [
 //     "connectionBadge", "refreshButton", "exportButton", "newCaseButton",
-//     "caseRows", "searchInput", "statusFilter",
+//     "caseRows", "searchInput",
 //     "summaryTotal", "summarySavings", "summaryEfficiency", "summaryPayback",
 //     "drawerBackdrop", "closeDrawerButton", "cancelButton",
 //     "caseForm", "drawerTitle", "saveButton", "toast"
-//   ].forEach(id => els[id] = document.getElementById(id));
+//   ].forEach(id => { els[id] = document.getElementById(id); });
 //   els.drawer = document.getElementById("caseDrawer");
 // }
 
 // function bindEvents() {
-//   els.newCaseButton.addEventListener("click",  () => openDrawer());
+//   els.newCaseButton.addEventListener("click",    () => openDrawer());
 //   els.closeDrawerButton.addEventListener("click", closeDrawer);
-//   els.cancelButton.addEventListener("click",   closeDrawer);
-//   els.drawerBackdrop.addEventListener("click", closeDrawer);
-//   els.exportButton.addEventListener("click",   exportCsv);
-//   els.caseForm.addEventListener("submit",      saveCurrentCase);
+//   els.cancelButton.addEventListener("click",      closeDrawer);
+//   els.drawerBackdrop.addEventListener("click",    closeDrawer);
+//   els.exportButton.addEventListener("click",      exportCsv);
+//   els.caseForm.addEventListener("submit",         saveCurrentCase);
 
 //   els.searchInput.addEventListener("input", e => {
 //     state.search = e.target.value.trim().toLowerCase();
 //     renderTable();
 //   });
-//   els.statusFilter.addEventListener("change", e => {
-//     state.statusFilter = e.target.value;
-//     renderTable();
-//   });
+
 //   els.refreshButton.addEventListener("click", async () => {
 //     await reloadRecords();
 //     render();
 //   });
+
 //   document.addEventListener("keydown", e => {
 //     if (e.key === "Escape" && els.drawer.classList.contains("open")) closeDrawer();
 //   });
+
 //   document.addEventListener("wheel", e => {
 //     if (document.activeElement.type === "number") e.preventDefault();
 //   }, { passive: false });
@@ -1821,14 +2196,16 @@ function csvQ(v) {
 // function renderTable() {
 //   renderSummaries();
 //   const rows = filtered();
+
 //   if (!rows.length) {
-//     els.caseRows.innerHTML = `<tr class="empty-row"><td colspan="11">No business cases match the current view.</td></tr>`;
+//     els.caseRows.innerHTML =
+//       `<tr class="empty-row"><td colspan="11">No business cases match the current view.</td></tr>`;
 //     return;
 //   }
+
 //   els.caseRows.innerHTML = rows.map(r => `
 //     <tr>
-//       <td class="idea-cell">${esc(r.ideaName )}</td>
-//       <td><span class="status-pill" data-status="${esc(r.status)}">${esc(r.status)}</span></td>
+//       <td class="idea-cell">${esc(r.ideaName)}</td>
 //       <td>${esc(r.personDisplayName)}</td>
 //       <td class="text-cell">${esc(r.valueProposition)}</td>
 //       <td class="number-cell">${fmt$(r.costSavings)}</td>
@@ -1857,12 +2234,13 @@ function csvQ(v) {
 // function filtered() {
 //   const q = state.search;
 //   return [...state.records]
-//     .filter(r => state.statusFilter === "All" || r.status === state.statusFilter)
 //     .filter(r => !q || [
 //       r.ideaName, r.personDisplayName, r.personEmail,
-//       r.department, r.status, r.problemStatement, r.valueProposition,r.confidenceLevel
+//       r.department, r.problemStatement, r.valueProposition, r.confidenceLevel
 //     ].some(v => String(v || "").toLowerCase().includes(q)))
-//     .sort((a, b) => new Date(b.modified || b.created || 0) - new Date(a.modified || a.created || 0));
+//     .sort((a, b) =>
+//       new Date(b.modified || b.created || 0) - new Date(a.modified || a.created || 0)
+//     );
 // }
 
 // // =============================================================================
@@ -1884,12 +2262,8 @@ function csvQ(v) {
 //     fillPersonPicker(record);
 //   } else {
 //     els.caseForm.elements.id.value = "";
-//     const s = els.caseForm.elements.status;
-//     if (s) s.value = state.choices.status[0];
-    
-// const c = els.caseForm.elements.confidenceLevel;
-// if (c) c.value = state.choices.confidenceLevel[0] || "";
-
+//     const c = els.caseForm.elements.confidenceLevel;
+//     if (c) c.value = state.choices.confidenceLevel[0] || "";
 //   }
 
 //   els.drawerBackdrop.hidden = false;
@@ -1907,31 +2281,10 @@ function csvQ(v) {
 
 // // =============================================================================
 // // SAVE
-// // ─────────────────────────────────────────────────────────────────────────────
-// // ROOT CAUSE of HTTP 400:
-// //   Power Automate's trigger JSON schema was auto-generated from a test run.
-// //   Depending on how the schema was generated, PA may have typed the numeric
-// //   fields as "string" or "integer". Sending the wrong JS type causes the
-// //   TriggerInputSchemaMismatch error.
-// //
-// // SOLUTION (no flow changes needed):
-// //   1. Read all values from FormData as plain strings.
-// //   2. Send them to the flow as strings (field_12: "10", not 10).
-// //   3. In the flow's "Create item" / "Update item" steps, PA's SharePoint
-// //      connector automatically coerces the string "10" to the Number column
-// //      value 10. This has always worked.
-// //   4. The trigger schema validation is the ONLY thing that cared about type.
-// //      Bypassing it by sending strings makes everything consistent.
-// //
-// // If you want to fix it in the flow instead: open the Save flow's HTTP trigger
-// // → "..." → Edit → "Use sample payload" → paste a sample with number fields
-// // as actual numbers → Save. That regenerates the schema with correct types.
 // // =============================================================================
-
 // async function saveCurrentCase(e) {
 //   e.preventDefault();
 
-//   // Read form — keep everything as strings initially
 //   const fd     = new FormData(els.caseForm);
 //   const record = formToRecord(fd);
 
@@ -1965,34 +2318,27 @@ function csvQ(v) {
 //     body:    JSON.stringify(payload)
 //   });
 //   let text = "";
-//   try { text = await res.text(); } catch {}
+//   try { text = await res.text(); } catch { /* ignore */ }
 //   if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
 //   try { return text ? JSON.parse(text) : {}; } catch { return {}; }
 // }
 
-
 // function buildSharePointPayload(record) {
 //   const payload = {
 //     operation: record.id ? "update" : "create",
-//     id: record.id ? String(record.id) : ""
+//     id:        record.id ? String(record.id) : ""
 //   };
 
 //   for (const [jsKey, spField] of Object.entries(CONFIG.fieldMap)) {
 //     if (["created", "modified", "id"].includes(jsKey)) continue;
 
 //     const val = record[jsKey];
-//     const s = (val == null ? "" : String(val)).trim();
-
+//     const s   = (val == null ? "" : String(val)).trim();
 //     if (s === "") continue;
 
-//     if (CONFIG.numberFields.has(jsKey)) {
-//       payload[spField] = Number(s);
-//     } else {
-//       payload[spField] = s;
-//     }
+//     payload[spField] = CONFIG.numberFields.has(jsKey) ? Number(s) : s;
 //   }
 
-//   // Person / Group field
 //   if (record.personClaims) {
 //     payload.person = record.personClaims;
 //   }
@@ -2000,18 +2346,14 @@ function csvQ(v) {
 //   return payload;
 // }
 
-// /** Read FormData → plain string record (numbers stay as strings here too) */
 // function formToRecord(fd) {
 //   const rec = {};
 //   for (const key of Object.keys(CONFIG.fieldMap)) {
 //     if (["created", "modified"].includes(key)) continue;
 //     const raw = fd.get(key);
-//     rec[key] = raw == null ? "" : String(raw).trim();
+//     rec[key]  = raw == null ? "" : String(raw).trim();
 //   }
-//   rec.id = fd.get("id") || "";
-//   rec.status = rec.status || state.choices.status[0] || "Intake";
-
-//   // Person — read from hidden field (written by people picker)
+//   rec.id     = fd.get("id") || "";
 //   rec.personClaims      = fd.get("personClaims") || "";
 //   rec.personDisplayName = state.selectedPerson?.displayName || "";
 //   rec.personEmail       = state.selectedPerson?.email       || "";
@@ -2025,7 +2367,6 @@ function csvQ(v) {
 // function exportCsv() {
 //   const cols = [
 //     ["ideaName",              "Business case idea"],
-//     ["status",                "Status"],
 //     ["personDisplayName",     "Person"],
 //     ["department",            "Department or GP"],
 //     ["problemStatement",      "Problem statement"],
@@ -2055,25 +2396,32 @@ function csvQ(v) {
 //     ["recurringCostAvoidance","Recurring cost avoidance"],
 //     ["marginImprovement",     "Margin improvement %"],
 //     ["scalabilityNotes",      "Scalable to all GPs"],
-//     ["confidenceLevel",        "Confidence Level"],
+//     ["confidenceLevel",       "Confidence Level"],
 //     ["modified",              "Updated"]
 //   ];
+
 //   const rows = filtered();
-//   const csv = [
+//   const csv  = [
 //     cols.map(([, l]) => csvQ(l)).join(","),
 //     ...rows.map(r => cols.map(([k]) => csvQ(r[k])).join(","))
 //   ].join("\r\n");
+
 //   const a = Object.assign(document.createElement("a"), {
 //     href:     URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })),
 //     download: `innovation-cases-${new Date().toISOString().slice(0, 10)}.csv`
 //   });
-//   document.body.append(a); a.click(); a.remove();
+//   document.body.append(a);
+//   a.click();
+//   a.remove();
 // }
 
 // // =============================================================================
 // // UTILITIES
 // // =============================================================================
-// function setBusy(v) { state.busy = v; document.body.classList.toggle("is-busy", v); }
+// function setBusy(v) {
+//   state.busy = v;
+//   document.body.classList.toggle("is-busy", v);
+// }
 
 // function showToast(msg) {
 //   clearTimeout(state.toastTimer);
@@ -2100,7 +2448,8 @@ function csvQ(v) {
 // function fmt$(v) {
 //   const n = Number(v) || 0;
 //   return new Intl.NumberFormat("en-US", {
-//     style: "currency", currency: "USD",
+//     style:                "currency",
+//     currency:             "USD",
 //     maximumFractionDigits: n >= 1000 ? 0 : 2
 //   }).format(n);
 // }
@@ -2126,9 +2475,11 @@ function csvQ(v) {
 
 // function esc(v) {
 //   return String(v ?? "")
-//     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-//     .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
-//     .replace(/'/g, "&#39;");
+//     .replace(/&/g,  "&amp;")
+//     .replace(/</g,  "&lt;")
+//     .replace(/>/g,  "&gt;")
+//     .replace(/"/g,  "&quot;")
+//     .replace(/'/g,  "&#39;");
 // }
 
 // function escAttr(v) { return esc(v).replace(/`/g, "&#96;"); }
