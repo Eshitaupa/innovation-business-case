@@ -627,6 +627,7 @@
 // =============================================================================
 // CONFIG
 // =============================================================================
+
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
@@ -675,11 +676,13 @@ const CONFIG = {
     "recurringCostAvoidance","marginImprovement"
   ]),
 
+  // Rich text fields (textarea → contenteditable editor)
   richTextFields: new Set([
     "problemStatement","currentWorkarounds","proposedSolution","mvpScope",
     "valueProposition","goToMarketChannels","changeManagement","rolloutPlan","scalabilityNotes"
   ]),
 
+  // Max character limits for rich text fields
   richTextLimits: {
     problemStatement:   2000,
     currentWorkarounds: 2000,
@@ -691,12 +694,6 @@ const CONFIG = {
     rolloutPlan:        2000,
     scalabilityNotes:   2000
   },
-
-  // Fields that must be 0-100
-  percentFields: new Set([
-    "efficiencyGain","adoptionRate","cycleTimeReduction",
-    "scheduleImpact","productivityUplift","marginImprovement"
-  ]),
 
   fallbackChoices: {
     department: [""],
@@ -716,7 +713,7 @@ const state = {
   busy:           false,
   toastTimer:     0,
   selectedPerson: null,
-  caseWindow:     null   // reference to the popup window
+  richTextValues: {}  // stores HTML content for rich text editors
 };
 
 const els = {};
@@ -729,10 +726,179 @@ document.addEventListener("DOMContentLoaded", init);
 async function init() {
   cacheElements();
   bindEvents();
+  buildRichTextEditors();
   await loadFromFlow();
   populateDropdowns();
   buildPeopleSelect();
   render();
+}
+
+// =============================================================================
+// RICH TEXT EDITOR
+// =============================================================================
+function buildRichTextEditors() {
+  CONFIG.richTextFields.forEach(fieldName => {
+    const textarea = els.caseForm?.elements[fieldName];
+    if (!textarea) return;
+
+    const limit = CONFIG.richTextLimits[fieldName] || 2000;
+
+    // Create wrapper
+    const wrapper = document.createElement("div");
+    wrapper.className = "rich-editor-wrapper";
+    wrapper.setAttribute("data-field", fieldName);
+
+    // Toolbar
+    const toolbar = document.createElement("div");
+    toolbar.className = "rich-toolbar";
+    toolbar.innerHTML = `
+      <button type="button" class="rich-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+      <button type="button" class="rich-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+      <button type="button" class="rich-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+      <span class="rich-sep"></span>
+      <button type="button" class="rich-btn" data-cmd="insertUnorderedList" title="Bullet list">&#8226; List</button>
+      <button type="button" class="rich-btn" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
+      <span class="rich-sep"></span>
+      <button type="button" class="rich-btn" data-cmd="removeFormat" title="Clear formatting">&#10005; Clear</button>
+    `;
+
+    // Content editable area
+    const editor = document.createElement("div");
+    editor.className = "rich-editor";
+    editor.contentEditable = "true";
+    editor.setAttribute("role", "textbox");
+    editor.setAttribute("aria-multiline", "true");
+    editor.setAttribute("data-field", fieldName);
+    editor.setAttribute("data-limit", limit);
+
+    // Character counter
+    const counter = document.createElement("div");
+    counter.className = "rich-counter";
+    counter.id = `counter-${fieldName}`;
+    counter.textContent = `0 / ${limit}`;
+
+    // Limit warning popup
+    const limitMsg = document.createElement("div");
+    limitMsg.className = "rich-limit-msg";
+    limitMsg.id = `limit-${fieldName}`;
+    limitMsg.textContent = `Maximum ${limit.toLocaleString()} characters allowed.`;
+
+    wrapper.appendChild(toolbar);
+    wrapper.appendChild(editor);
+    wrapper.appendChild(counter);
+    wrapper.appendChild(limitMsg);
+
+    // Insert before the original textarea and hide it
+    textarea.parentNode.insertBefore(wrapper, textarea);
+    textarea.style.display = "none";
+
+    // Toolbar button events
+    toolbar.querySelectorAll(".rich-btn[data-cmd]").forEach(btn => {
+      btn.addEventListener("mousedown", e => {
+        e.preventDefault();
+        const cmd = btn.getAttribute("data-cmd");
+        document.execCommand(cmd, false, null);
+        editor.focus();
+        updateCounter(editor, counter, limitMsg, limit);
+        syncEditorToTextarea(fieldName);
+      });
+    });
+
+    // Input events
+    editor.addEventListener("input", () => {
+      enforceLimit(editor, counter, limitMsg, limit);
+      syncEditorToTextarea(fieldName);
+    });
+
+    editor.addEventListener("paste", e => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+      document.execCommand("insertText", false, text);
+    });
+
+    // Update toolbar active states on selection
+    editor.addEventListener("keyup", () => updateToolbarState(toolbar));
+    editor.addEventListener("mouseup", () => updateToolbarState(toolbar));
+  });
+}
+
+function enforceLimit(editor, counter, limitMsg, limit) {
+  const text = editor.innerText || "";
+  const len = text.replace(/\n$/, "").length;
+  counter.textContent = `${len} / ${limit}`;
+
+  if (len > limit) {
+    counter.classList.add("over");
+    limitMsg.classList.add("show");
+    // Trim to limit
+    trimEditorToLimit(editor, limit);
+    setTimeout(() => limitMsg.classList.remove("show"), 3000);
+  } else {
+    counter.classList.remove("over");
+    limitMsg.classList.remove("show");
+  }
+}
+
+function updateCounter(editor, counter, limitMsg, limit) {
+  const text = editor.innerText || "";
+  const len = text.replace(/\n$/, "").length;
+  counter.textContent = `${len} / ${limit}`;
+  if (len > limit) {
+    counter.classList.add("over");
+    limitMsg.classList.add("show");
+    setTimeout(() => limitMsg.classList.remove("show"), 3000);
+  } else {
+    counter.classList.remove("over");
+    limitMsg.classList.remove("show");
+  }
+}
+
+function trimEditorToLimit(editor, limit) {
+  let text = editor.innerText || "";
+  if (text.replace(/\n$/, "").length <= limit) return;
+  // Restore previous valid state from selection
+  document.execCommand("undo");
+}
+
+function updateToolbarState(toolbar) {
+  const cmds = ["bold", "italic", "underline"];
+  cmds.forEach(cmd => {
+    const btn = toolbar.querySelector(`[data-cmd="${cmd}"]`);
+    if (btn) {
+      btn.classList.toggle("active", document.queryCommandState(cmd));
+    }
+  });
+}
+
+function syncEditorToTextarea(fieldName) {
+  const editor = document.querySelector(`.rich-editor[data-field="${fieldName}"]`);
+  const textarea = els.caseForm?.elements[fieldName];
+  if (editor && textarea) {
+    textarea.value = editor.innerHTML;
+    state.richTextValues[fieldName] = editor.innerHTML;
+  }
+}
+
+function setEditorContent(fieldName, htmlContent) {
+  const editor = document.querySelector(`.rich-editor[data-field="${fieldName}"]`);
+  const counter = document.getElementById(`counter-${fieldName}`);
+  const limitMsg = document.getElementById(`limit-${fieldName}`);
+  const limit = CONFIG.richTextLimits[fieldName] || 2000;
+
+  if (editor) {
+    editor.innerHTML = htmlContent || "";
+    if (counter) updateCounter(editor, counter, limitMsg, limit);
+  }
+
+  const textarea = els.caseForm?.elements[fieldName];
+  if (textarea) textarea.value = htmlContent || "";
+}
+
+function clearAllEditors() {
+  CONFIG.richTextFields.forEach(fieldName => {
+    setEditorContent(fieldName, "");
+  });
+  state.richTextValues = {};
 }
 
 // =============================================================================
@@ -742,9 +908,9 @@ async function loadFromFlow() {
   setBusy(true);
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({})
+      body:    JSON.stringify({})
     });
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data = await res.json();
@@ -752,19 +918,25 @@ async function loadFromFlow() {
     if (data.choices) {
       state.choices.confidenceLevel =
         Array.isArray(data.choices.confidenceLevel) && data.choices.confidenceLevel.length
-          ? data.choices.confidenceLevel : [...CONFIG.fallbackChoices.confidenceLevel];
+          ? data.choices.confidenceLevel
+          : [...CONFIG.fallbackChoices.confidenceLevel];
+
       state.choices.department =
         Array.isArray(data.choices.department) && data.choices.department.length
-          ? data.choices.department : [...CONFIG.fallbackChoices.department];
+          ? data.choices.department
+          : [...CONFIG.fallbackChoices.department];
     } else {
       const rows = extractRows(data);
-      state.choices.department     = uniqueChoices(rows, "field_2") || [...CONFIG.fallbackChoices.department];
+      state.choices.department     = uniqueChoices(rows, "field_2")                 || [...CONFIG.fallbackChoices.department];
       state.choices.confidenceLevel = uniqueChoices(rows, "Confidence_x0020_Level") || [...CONFIG.fallbackChoices.confidenceLevel];
     }
 
-    state.allUsers = Array.isArray(data.users) ? data.users.filter(u => u.Email) : [];
-    state.records  = extractRows(data).map(mapItem);
-    state.mode     = "flow";
+    state.allUsers = Array.isArray(data.users)
+      ? data.users.filter(u => u.Email)
+      : [];
+
+    state.records = extractRows(data).map(mapItem);
+    state.mode    = "flow";
   } catch (err) {
     console.error("Flow load failed:", err);
     state.records  = [];
@@ -784,9 +956,9 @@ async function reloadRecords() {
   setBusy(true);
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({})
+      body:    JSON.stringify({})
     });
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data    = await res.json();
@@ -858,663 +1030,127 @@ function mapItem(item) {
 }
 
 // =============================================================================
-// POPUP WINDOW — opens case form in a real separate window
+// PEOPLE PICKER
 // =============================================================================
-function openCaseWindow(record) {
-  // Build the full form HTML as a self-contained page
-  const html = buildCaseWindowHTML(record);
-  const blob  = new Blob([html], { type: "text/html" });
-  const url   = URL.createObjectURL(blob);
-
-  const w = 960, h = window.screen.availHeight;
-  const left = Math.round((window.screen.availWidth - w) / 2);
-  const win  = window.open(url, "caseForm_" + Date.now(),
-    `width=${w},height=${h},left=${left},top=0,resizable=yes,scrollbars=yes`);
-
-  if (!win) {
-    showToast("⚠ Pop-up blocked — please allow pop-ups for this site.");
-    return;
-  }
-  state.caseWindow = win;
-
-  // Listen for save/cancel messages from the popup
-  window.addEventListener("message", onCaseWindowMessage);
-}
-
-function onCaseWindowMessage(e) {
-  if (e.data?.type === "CASE_SAVED") {
-    reloadRecords().then(render);
-    showToast(e.data.isNew ? "✓ Saved to SharePoint." : "✓ Updated in SharePoint.");
-    window.removeEventListener("message", onCaseWindowMessage);
-  }
-  if (e.data?.type === "CASE_CLOSED") {
-    window.removeEventListener("message", onCaseWindowMessage);
-  }
-}
-
-// =============================================================================
-// BUILD POPUP HTML — fully self-contained page with embedded CSS + JS
-// =============================================================================
-function buildCaseWindowHTML(record) {
-  const isEdit  = !!record;
-  const title   = isEdit ? "Edit innovation case" : "New innovation case";
-  const fv      = (k) => record ? (record[k] ?? "") : "";
-  const fvN     = (k) => record ? (record[k] || "") : "";
-
-  // Serialise all data the popup needs
-  const popupData = JSON.stringify({
-    record:         record || null,
-    allUsers:       state.allUsers,
-    choices:        state.choices,
-    saveFlowUrl:    CONFIG.saveFlowUrl,
-    fieldMap:       CONFIG.fieldMap,
-    numberFields:   [...CONFIG.numberFields],
-    richTextFields: [...CONFIG.richTextFields],
-    richTextLimits: CONFIG.richTextLimits,
-    percentFields:  [...CONFIG.percentFields]
-  });
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title}</title>
-<style>
-:root{
-  --accent:#155bb5;--accent-strong:#0e3e85;--accent-soft:#e6effc;
-  --ink:#0f1c2e;--muted:#6b7c93;--line:#d6e0f0;--panel:#fff;
-  --danger:#b42318;--danger-soft:#fff1f0;--danger-line:#fca5a5;
-  --bg:#f4f7fb;
-}
-*{box-sizing:border-box;margin:0;padding:0;}
-html,body{min-height:100%;background:var(--bg);color:var(--ink);font-family:"Segoe UI",Arial,sans-serif;font-size:14px;}
-body{display:flex;flex-direction:column;}
-header{background:#fff;border-bottom:1px solid var(--line);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
-header h1{font-size:20px;font-weight:700;}
-.hdr-actions{display:flex;gap:10px;}
-main{flex:1;padding:24px;max-width:900px;width:100%;margin:0 auto;}
-footer{background:#fff;border-top:1px solid var(--line);padding:14px 24px;display:flex;justify-content:flex-end;gap:12px;position:sticky;bottom:0;}
-
-/* buttons */
-.btn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);font:inherit;font-weight:600;cursor:pointer;transition:background 120ms,border-color 120ms;}
-.btn:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-strong);}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
-.btn.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong);}
-
-/* form */
-.section{background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px;}
-.section h2{font-size:15px;font-weight:700;margin-bottom:14px;color:var(--accent-strong);}
-.grid{display:grid;gap:12px;}
-.grid.two{grid-template-columns:repeat(2,minmax(0,1fr));}
-.grid.three{grid-template-columns:repeat(3,minmax(0,1fr));}
-label{display:flex;flex-direction:column;gap:5px;}
-label>span{font-size:12px;font-weight:700;color:#3f4d48;text-transform:uppercase;letter-spacing:.3px;}
-input,select,textarea{width:100%;border:1px solid #cdd9d2;border-radius:7px;background:#fff;color:var(--ink);outline:0;font:inherit;}
-input,select{min-height:36px;padding:0 10px;}
-textarea{padding:8px 10px;resize:vertical;min-height:70px;}
-input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(21,91,181,.14);}
-input[type=number]{appearance:textfield;-webkit-appearance:textfield;}
-input[type=number]::-webkit-outer-spin-button,
-input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
-select{min-height:38px;}
-
-/* percent field over-range */
-input.pct-error{border-color:var(--danger)!important;background:var(--danger-soft)!important;box-shadow:0 0 0 3px rgba(180,35,24,.15)!important;}
-.pct-hint{font-size:11px;color:var(--danger);font-weight:600;display:none;margin-top:2px;}
-.pct-hint.show{display:block;}
-
-/* field errors */
-input.field-error,select.field-error,.rich-editor.field-error{border-color:var(--danger)!important;background:var(--danger-soft)!important;}
-.field-error-msg{font-size:11px;color:var(--danger);font-weight:600;margin-top:3px;}
-
-/* people picker */
-#peoplePicker{display:flex;flex-direction:column;gap:4px;}
-#personSelect{width:100%;max-height:110px;overflow-y:auto;border:1px solid #ccc;border-radius:6px;font:inherit;display:none;}
-
-/* ===== RICH TEXT EDITOR ===== */
-.rte-wrap{border:1px solid #cdd9d2;border-radius:8px;overflow:hidden;background:#fff;position:relative;}
-.rte-wrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(21,91,181,.14);}
-.rte-bar{display:flex;align-items:center;gap:2px;padding:5px 8px;background:#f7f9fc;border-bottom:1px solid #e4ecf4;flex-wrap:wrap;}
-.rte-btn{display:inline-flex;align-items:center;justify-content:center;min-width:28px;min-height:26px;padding:0 6px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--ink);font:inherit;font-size:13px;font-weight:700;cursor:pointer;line-height:1;transition:background 100ms,border-color 100ms;user-select:none;}
-.rte-btn:hover{background:var(--accent-soft);border-color:var(--line);color:var(--accent-strong);}
-.rte-btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-strong);}
-.rte-sep{width:1px;height:18px;background:var(--line);margin:0 3px;flex-shrink:0;}
-.rte-body{min-height:90px;max-height:260px;overflow-y:auto;padding:10px 12px;outline:none;font-size:14px;line-height:1.65;color:var(--ink);word-break:break-word;}
-.rte-body:empty::before{content:attr(data-ph);color:var(--muted);pointer-events:none;}
-.rte-body ul,.rte-body ol{padding-left:20px;margin:4px 0;}
-.rte-body li{margin:2px 0;}
-.rte-footer{display:flex;justify-content:flex-end;padding:3px 10px;background:#f7f9fc;border-top:1px solid #e4ecf4;font-size:11px;color:var(--muted);}
-.rte-footer.over{color:var(--danger);font-weight:700;}
-.rte-limit-toast{position:absolute;bottom:calc(100% + 6px);right:0;background:var(--danger);color:#fff;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.18);white-space:nowrap;display:none;pointer-events:none;z-index:5;}
-.rte-limit-toast::after{content:'';position:absolute;top:100%;right:12px;border:5px solid transparent;border-top-color:var(--danger);}
-.rte-limit-toast.show{display:block;}
-
-/* error modal */
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;}
-.modal-box{background:#fff;border-radius:12px;padding:24px;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.2);}
-.modal-box h3{color:var(--danger);font-size:16px;margin-bottom:14px;}
-.modal-box ul{padding-left:18px;margin-bottom:18px;}
-.modal-box ul li{font-size:13px;padding:3px 0;color:var(--ink);}
-.modal-box ul li b{color:var(--danger);}
-.busy-overlay{position:fixed;inset:0;background:rgba(255,255,255,.6);z-index:100;display:none;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--accent);}
-.busy-overlay.show{display:flex;}
-</style>
-</head>
-<body>
-
-<header>
-  <h1>${title}</h1>
-  <div class="hdr-actions">
-    <button class="btn" id="cancelBtn" type="button">Cancel</button>
-    <button class="btn primary" id="saveBtn" type="button">💾 Save case</button>
-  </div>
-</header>
-
-<main>
-  <input type="hidden" id="f_id" value="${fv("id")}">
-
-  <section class="section">
-    <h2>Overview</h2>
-    <div class="grid two">
-      <label><span>Business Case idea *</span><input id="f_ideaName" type="text" maxlength="120" value="${escAttrW(fv("ideaName"))}"></label>
-      <label><span>Owner</span><div id="peoplePicker"></div><input type="hidden" id="f_personClaims"></label>
-      <label><span>Department</span><select id="f_department"></select></label>
-    </div>
-  </section>
-
-  <section class="section">
-    <h2>Problem Statement</h2>
-    <div class="grid">
-      <label><span>Pain point users face today</span><div class="rte-wrap" id="rte_problemStatement"></div></label>
-      <label><span>Current workarounds failing</span><div class="rte-wrap" id="rte_currentWorkarounds"></div></label>
-    </div>
-  </section>
-
-  <section class="section">
-    <h2>Proposed or Adopted Solution</h2>
-    <div class="grid two">
-      <label><span>Innovation approach</span><div class="rte-wrap" id="rte_proposedSolution"></div></label>
-      <label><span>MVP scope</span><div class="rte-wrap" id="rte_mvpScope"></div></label>
-    </div>
-  </section>
-
-  <section class="section">
-    <h2>Strategic Benefits</h2>
-    <div class="rte-wrap" id="rte_valueProposition"></div>
-  </section>
-
-  <section class="section">
-    <h2>Value Proposition</h2>
-    <div class="grid two">
-      <label><span>Cost savings</span><input id="f_costSavings" type="number" value="${fvN("costSavings")}"></label>
-      <label><span>Efficiency gain % <small style="font-weight:400;color:var(--muted)">(0–100)</small></span>
-        <input id="f_efficiencyGain" type="number" min="0" max="100" value="${fvN("efficiencyGain")}">
-        <span class="pct-hint" id="h_efficiencyGain">Must be 0–100</span>
-      </label>
-      <label><span>Payback period months</span><input id="f_paybackMonths" type="number" min="0" value="${fvN("paybackMonths")}"></label>
-      <label><span>Confidence Level</span><select id="f_confidenceLevel"></select></label>
-    </div>
-  </section>
-
-  <section class="section">
-    <h2>Key Metrics</h2>
-    <div class="grid three">
-      <label><span>Active users</span><input id="f_activeUsers" type="number" min="0" value="${fvN("activeUsers")}"></label>
-      <label><span>Adoption rate % <small style="font-weight:400;color:var(--muted)">(0–100)</small></span>
-        <input id="f_adoptionRate" type="number" min="0" max="100" value="${fvN("adoptionRate")}">
-        <span class="pct-hint" id="h_adoptionRate">Must be 0–100</span>
-      </label>
-      <label><span>Revenue impact</span><input id="f_revenueImpact" type="number" min="0" value="${fvN("revenueImpact")}"></label>
-      <label><span>Cycle time reduction % <small style="font-weight:400;color:var(--muted)">(0–100)</small></span>
-        <input id="f_cycleTimeReduction" type="number" min="0" max="100" value="${fvN("cycleTimeReduction")}">
-        <span class="pct-hint" id="h_cycleTimeReduction">Must be 0–100</span>
-      </label>
-      <label><span>Schedule impact % <small style="font-weight:400;color:var(--muted)">(0–100)</small></span>
-        <input id="f_scheduleImpact" type="number" min="0" max="100" value="${fvN("scheduleImpact")}">
-        <span class="pct-hint" id="h_scheduleImpact">Must be 0–100</span>
-      </label>
-    </div>
-  </section>
-
-  <section class="section">
-    <h2>Adoption Criteria</h2>
-    <div class="grid">
-      <label><span>Centralized channel</span><div class="rte-wrap" id="rte_goToMarketChannels"></div></label>
-      <label><span>Change management and training</span><div class="rte-wrap" id="rte_changeManagement"></div></label>
-      <label><span>Phased rollout plan</span><div class="rte-wrap" id="rte_rolloutPlan"></div></label>
-    </div>
-  </section>
-
-  <section class="section">
-    <h2>Cost Structure</h2>
-    <div class="grid three">
-      <label><span>Tools and platform charges</span><input id="f_toolsPlatformCharges" type="number" min="0" value="${fvN("toolsPlatformCharges")}"></label>
-      <label><span>License cost</span><input id="f_licenseCost" type="number" min="0" value="${fvN("licenseCost")}"></label>
-      <label><span>Development cost</span><input id="f_developmentCost" type="number" min="0" value="${fvN("developmentCost")}"></label>
-      <label><span>Support and maintenance</span><input id="f_supportMaintenanceCost" type="number" min="0" value="${fvN("supportMaintenanceCost")}"></label>
-      <label><span>Recurring cost avoidance</span><input id="f_recurringCostAvoidance" type="number" min="0" value="${fvN("recurringCostAvoidance")}"></label>
-    </div>
-  </section>
-
-  <section class="section">
-    <h2>Long Term Value Proposition</h2>
-    <div class="grid three">
-      <label><span>Productivity uplift % <small style="font-weight:400;color:var(--muted)">(0–100)</small></span>
-        <input id="f_productivityUplift" type="number" min="0" max="100" value="${fvN("productivityUplift")}">
-        <span class="pct-hint" id="h_productivityUplift">Must be 0–100</span>
-      </label>
-      <label><span>Margin improvement % <small style="font-weight:400;color:var(--muted)">(0–100)</small></span>
-        <input id="f_marginImprovement" type="number" min="0" max="100" value="${fvN("marginImprovement")}">
-        <span class="pct-hint" id="h_marginImprovement">Must be 0–100</span>
-      </label>
-    </div>
-    <div style="margin-top:12px">
-      <label><span>Scalable to all disciplines</span><div class="rte-wrap" id="rte_scalabilityNotes"></div></label>
-    </div>
-  </section>
-</main>
-
-<footer>
-  <button class="btn" id="cancelBtn2" type="button">Cancel</button>
-  <button class="btn primary" id="saveBtn2" type="button">💾 Save case</button>
-</footer>
-
-<div class="busy-overlay" id="busyOverlay">Saving…</div>
-
-<script>
-// ---- CONFIG from parent ----
-const PD = ${popupData};
-const percentFields = new Set(PD.percentFields);
-const richTextFields = new Set(PD.richTextFields);
-const richTextLimits = PD.richTextLimits;
-const numberFields   = new Set(PD.numberFields);
-
-// ---- PEOPLE PICKER ----
-let selectedPerson = PD.record
-  ? { displayName: PD.record.personDisplayName || "", email: PD.record.personEmail || "", claims: PD.record.personClaims || "" }
-  : null;
-
-(function buildPicker(){
+function buildPeopleSelect() {
   const container = document.getElementById("peoplePicker");
-  const fi = document.createElement("input");
-  fi.type = "text"; fi.placeholder = "Type name or email…"; fi.autocomplete = "off";
-  fi.style.cssText = "width:100%;border:1px solid #cdd9d2;border-radius:7px;min-height:36px;padding:0 10px;font:inherit;outline:0;";
-  if(selectedPerson) fi.value = selectedPerson.displayName || selectedPerson.email;
+  if (!container) return;
+  container.innerHTML = "";
+
+  const filterInput = document.createElement("input");
+  filterInput.type        = "text";
+  filterInput.id          = "personFilterInput";
+  filterInput.placeholder = "Type name or email…";
+  filterInput.autocomplete = "off";
+  filterInput.setAttribute("aria-label", "Search for a person");
 
   const sel = document.createElement("select");
-  sel.id = "personSelect"; sel.size = 4; sel.style.display = "none";
+  sel.id   = "personSelect";
+  sel.size = 4;
+  sel.setAttribute("aria-label", "Select a person");
+  sel.style.cssText = "display:none;width:100%;";
 
-  container.appendChild(fi); container.appendChild(sel);
+  container.appendChild(filterInput);
+  container.appendChild(sel);
 
-  fi.addEventListener("input", () => {
-    const q = fi.value.trim().toLowerCase();
-    sel.innerHTML = "";
-    if(q.length < 2){ sel.style.display="none"; return; }
-    const matches = (PD.allUsers||[]).filter(u =>
-      (u.Title||"").toLowerCase().includes(q)||(u.Email||"").toLowerCase().includes(q)
-    ).slice(0,50);
-    if(!matches.length){
-      const o=document.createElement("option"); o.disabled=true; o.textContent="No results";
-      sel.appendChild(o);
+  filterInput.addEventListener("input", () => {
+    const q = filterInput.value.trim().toLowerCase();
+    if (q.length < 2) {
+      sel.style.display = "none";
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+      return;
+    }
+
+    const matches = state.allUsers
+      .filter(u =>
+        (u.Title || "").toLowerCase().includes(q) ||
+        (u.Email || "").toLowerCase().includes(q)
+      )
+      .slice(0, 50);
+
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+
+    if (!matches.length) {
+      const empty = document.createElement("option");
+      empty.disabled    = true;
+      empty.textContent = "No results found";
+      sel.appendChild(empty);
     } else {
-      matches.forEach(u=>{
-        const o=document.createElement("option");
-        o.value=u.LoginName;
-        o.setAttribute("data-name",u.Title||"");
-        o.setAttribute("data-email",u.Email||"");
-        o.textContent=(u.Title||"")+" — "+(u.Email||"");
-        sel.appendChild(o);
+      matches.forEach(u => {
+        const opt = document.createElement("option");
+        opt.value = u.LoginName;
+        opt.setAttribute("data-name",  u.Title || "");
+        opt.setAttribute("data-email", u.Email || "");
+        opt.textContent = (u.Title || "") + " — " + (u.Email || "");
+        sel.appendChild(opt);
       });
-    }
-    sel.style.display="block";
-  });
 
-  sel.addEventListener("change",()=>{
-    const o = sel.options[sel.selectedIndex];
-    if(!o||o.disabled) return;
-    selectedPerson = { displayName:o.getAttribute("data-name")||"", email:o.getAttribute("data-email")||"", claims:o.value };
-    document.getElementById("f_personClaims").value = o.value;
-    fi.value = selectedPerson.displayName || selectedPerson.email;
-    sel.style.display="none"; sel.innerHTML="";
-  });
-})();
-
-// ---- DROPDOWNS ----
-(function fillDropdowns(){
-  const dept = document.getElementById("f_department");
-  const conf = document.getElementById("f_confidenceLevel");
-  (PD.choices.department||[]).forEach(c=>{ if(!c) return; const o=document.createElement("option"); o.value=o.textContent=c; dept.appendChild(o); });
-  (PD.choices.confidenceLevel||[]).forEach(c=>{ if(!c) return; const o=document.createElement("option"); o.value=o.textContent=c; conf.appendChild(o); });
-  if(PD.record){
-    dept.value = PD.record.department||"";
-    conf.value = PD.record.confidenceLevel||"";
-  }
-})();
-
-// ---- PERCENT FIELD LIVE VALIDATION ----
-const PCT_IDS = ["f_efficiencyGain","f_adoptionRate","f_cycleTimeReduction","f_scheduleImpact","f_productivityUplift","f_marginImprovement"];
-PCT_IDS.forEach(id=>{
-  const inp = document.getElementById(id);
-  if(!inp) return;
-  const hintId = "h_" + id.replace("f_","");
-  const hint   = document.getElementById(hintId);
-  inp.addEventListener("input",()=>{
-    const v = parseFloat(inp.value);
-    const bad = inp.value !== "" && (isNaN(v) || v < 0 || v > 100);
-    inp.classList.toggle("pct-error", bad);
-    if(hint) hint.classList.toggle("show", bad);
-  });
-});
-
-// ---- RICH TEXT EDITOR ----
-// Uses the browser's native contenteditable editing commands. This is more reliable
-// for typing, bold / italic / underline, lists, alignment, and clear formatting.
-function buildRTE(wrapId, fieldName, initialHTML) {
-  const wrap  = document.getElementById(wrapId);
-  if (!wrap) return;
-  const limit = richTextLimits[fieldName] || 2000;
-
-  const bar = document.createElement("div");
-  bar.className = "rte-bar";
-
-  function makeBtn(label, command, value, title) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "rte-btn";
-    b.innerHTML = label;
-    b.title = title || label;
-    b.dataset.command = command;
-    if (value) b.dataset.value = value;
-    return b;
-  }
-  function makeSep() {
-    const s = document.createElement("span");
-    s.className = "rte-sep";
-    return s;
-  }
-
-  const buttons = [
-    makeBtn("<b>B</b>", "bold", "", "Bold"),
-    makeBtn("<i>I</i>", "italic", "", "Italic"),
-    makeBtn("<u>U</u>", "underline", "", "Underline"),
-    makeSep(),
-    makeBtn("&#8676; L", "justifyLeft", "", "Align left"),
-    makeBtn("&#8596; C", "justifyCenter", "", "Align center"),
-    makeBtn("R &#8677;", "justifyRight", "", "Align right"),
-    makeSep(),
-    makeBtn("• List", "insertUnorderedList", "", "Bullet list"),
-    makeBtn("1. List", "insertOrderedList", "", "Numbered list"),
-    makeSep(),
-    makeBtn("✕ Clear", "removeFormat", "", "Clear formatting")
-  ];
-  bar.append(...buttons);
-
-  const body = document.createElement("div");
-  body.className = "rte-body";
-  body.contentEditable = "true";
-  body.setAttribute("role", "textbox");
-  body.setAttribute("aria-multiline", "true");
-  body.setAttribute("data-ph", "Type here…");
-  body.setAttribute("spellcheck", "true");
-  body.innerHTML = initialHTML || "";
-
-  const footer = document.createElement("div");
-  footer.className = "rte-footer";
-
-  const toast = document.createElement("div");
-  toast.className = "rte-limit-toast";
-  toast.textContent = "Maximum " + limit.toLocaleString() + " characters allowed.";
-
-  wrap.append(bar, body, footer, toast);
-
-  let limitTimer = 0;
-  function plainText() {
-    return (body.innerText || "").replace(/\n$/, "");
-  }
-  function showLimitToast() {
-    toast.classList.add("show");
-    clearTimeout(limitTimer);
-    limitTimer = setTimeout(() => toast.classList.remove("show"), 2500);
-  }
-  function updateCounter() {
-    const len = plainText().length;
-    footer.textContent = len + " / " + limit;
-    footer.classList.toggle("over", len > limit);
-  }
-  function updateButtonStates() {
-    bar.querySelectorAll(".rte-btn[data-command]").forEach(btn => {
-      const cmd = btn.dataset.command;
-      let active = false;
-      try {
-        active = ["bold", "italic", "underline", "insertUnorderedList", "insertOrderedList", "justifyLeft", "justifyCenter", "justifyRight"].includes(cmd)
-          && document.queryCommandState(cmd);
-      } catch (_) {}
-      btn.classList.toggle("on", active);
-    });
-  }
-  function runCommand(command, value) {
-    body.focus();
-    if (command === "removeFormat") {
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-        body.innerHTML = plainText().replace(/\n/g, "<br>");
-      } else {
-        document.execCommand("removeFormat", false, null);
+      if (state.selectedPerson?.claims) {
+        for (let i = 0; i < sel.options.length; i++) {
+          if (sel.options[i].value === state.selectedPerson.claims) {
+            sel.options[i].selected = true;
+            break;
+          }
+        }
       }
-    } else {
-      document.execCommand(command, false, value || null);
     }
-    updateCounter();
-    updateButtonStates();
-  }
 
-  bar.addEventListener("mousedown", e => e.preventDefault());
-  bar.addEventListener("click", e => {
-    const btn = e.target.closest(".rte-btn[data-command]");
-    if (!btn) return;
-    e.preventDefault();
-    runCommand(btn.dataset.command, btn.dataset.value || null);
+    sel.style.display = "block";
   });
 
-  body.addEventListener("beforeinput", e => {
-    const incoming = e.data || "";
-    if (!incoming) return;
-    const sel = window.getSelection();
-    const selected = sel && sel.rangeCount ? sel.toString().length : 0;
-    if (plainText().length - selected + incoming.length > limit) {
-      e.preventDefault();
-      showLimitToast();
-    }
+  sel.addEventListener("change", () => {
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt || opt.disabled) return;
+
+    const claims      = opt.value;
+    const displayName = opt.getAttribute("data-name")  || "";
+    const email       = opt.getAttribute("data-email") || "";
+
+    state.selectedPerson = { displayName, email, claims };
+
+    const hiddenField = els.caseForm?.elements.personClaims;
+    if (hiddenField) hiddenField.value = claims;
+
+    filterInput.value = displayName || email;
+    sel.style.display = "none";
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
   });
-
-  body.addEventListener("input", () => {
-    if (plainText().length > limit) {
-      body.innerText = plainText().slice(0, limit);
-      showLimitToast();
-    }
-    updateCounter();
-    updateButtonStates();
-  });
-
-  body.addEventListener("paste", e => {
-    e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData("text/plain") || "";
-    const sel = window.getSelection();
-    const selected = sel && sel.rangeCount ? sel.toString().length : 0;
-    const remaining = Math.max(0, limit - (plainText().length - selected));
-    const clipped = text.slice(0, remaining);
-    if (text.length > clipped.length) showLimitToast();
-    document.execCommand("insertText", false, clipped);
-    updateCounter();
-  });
-
-  body.addEventListener("keyup", updateButtonStates);
-  body.addEventListener("mouseup", updateButtonStates);
-  body.addEventListener("focus", updateButtonStates);
-  updateCounter();
-
-  wrap._getHTML = () => body.innerHTML;
-  wrap._getText = () => plainText();
-  wrap._setHTML = h => { body.innerHTML = h || ""; updateCounter(); };
-  wrap._clear   = () => { body.innerHTML = ""; updateCounter(); };
 }
 
-// Build all RTEs
-const rteFields = ["problemStatement","currentWorkarounds","proposedSolution","mvpScope",
-  "valueProposition","goToMarketChannels","changeManagement","rolloutPlan","scalabilityNotes"];
-rteFields.forEach(f => {
-  buildRTE("rte_" + f, f, PD.record ? (PD.record[f]||"") : "");
-});
+function fillPersonPicker(record) {
+  if (!record.personDisplayName && !record.personEmail) return;
 
-// ---- VALIDATION ----
-function getFieldLabel(key){
-  const map={
-    ideaName:"Business Case idea",efficiencyGain:"Efficiency gain %",
-    adoptionRate:"Adoption rate %",cycleTimeReduction:"Cycle time reduction %",
-    scheduleImpact:"Schedule impact",productivityUplift:"Productivity uplift %",
-    marginImprovement:"Margin improvement %"
+  state.selectedPerson = {
+    displayName: record.personDisplayName,
+    email:       record.personEmail,
+    claims:      record.personClaims
   };
-  return map[key]||key;
+
+  const filterInput = document.getElementById("personFilterInput");
+  const sel         = document.getElementById("personSelect");
+  if (!filterInput || !sel) return;
+
+  filterInput.value = record.personDisplayName || record.personEmail;
+  while (sel.firstChild) sel.removeChild(sel.firstChild);
+  sel.style.display = "none";
+
+  const hiddenField = els.caseForm?.elements.personClaims;
+  if (hiddenField) hiddenField.value = record.personClaims;
 }
 
-function validate(){
-  const errors=[];
-  const ideaEl=document.getElementById("f_ideaName");
-  if(!ideaEl.value.trim()){
-    errors.push({field:"f_ideaName",msg:"Business Case idea is required."});
+function resetPersonPicker() {
+  state.selectedPerson = null;
+
+  const filterInput = document.getElementById("personFilterInput");
+  const sel         = document.getElementById("personSelect");
+  if (filterInput) filterInput.value = "";
+  if (sel) {
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    sel.style.display = "none";
   }
-  PCT_IDS.forEach(id=>{
-    const inp=document.getElementById(id);
-    if(!inp) return;
-    const v=parseFloat(inp.value);
-    if(inp.value!==""&&(isNaN(v)||v<0||v>100)){
-      const key=id.replace("f_","");
-      errors.push({field:id,msg:getFieldLabel(key)+" must be 0–100."});
-    }
-  });
-  return errors;
-}
 
-function showErrors(errors){
-  // clear previous
-  document.querySelectorAll(".field-error").forEach(e=>e.classList.remove("field-error"));
-  document.querySelectorAll(".field-error-msg").forEach(e=>e.remove());
-
-  errors.forEach(({field,msg})=>{
-    const el=document.getElementById(field);
-    if(el){
-      el.classList.add("field-error");
-      const s=document.createElement("span");
-      s.className="field-error-msg"; s.textContent=msg;
-      el.parentNode.appendChild(s);
-    }
-  });
-
-  // Show modal
-  const existing=document.getElementById("errModal");
-  if(existing) existing.remove();
-  const bg=document.createElement("div");
-  bg.className="modal-bg"; bg.id="errModal";
-  const box=document.createElement("div");
-  box.className="modal-box";
-  box.innerHTML="<h3>⚠ Please fix these errors</h3><ul>"
-    +errors.map(e=>"<li><b>"+e.msg.split(":")[0]+"</b>"+(e.msg.includes(":")?": "+e.msg.split(":").slice(1).join(":"):"")+"</li>").join("")
-    +"</ul><button class='btn primary' style='width:100%' id='errOkBtn'>OK, fix these</button>";
-  bg.appendChild(box);
-  document.body.appendChild(bg);
-  document.getElementById("errOkBtn").onclick=()=>{
-    bg.remove();
-    const first=document.querySelector(".field-error");
-    if(first){first.scrollIntoView({behavior:"smooth",block:"center"});first.focus();}
-  };
-  bg.addEventListener("click",e=>{if(e.target===bg)bg.remove();});
-}
-
-// ---- COLLECT RECORD ----
-function collectRecord(){
-  const get=id=>{ const el=document.getElementById(id); return el?el.value:""; };
-  const record={
-    id:               get("f_id"),
-    ideaName:         get("f_ideaName"),
-    department:       get("f_department"),
-    confidenceLevel:  get("f_confidenceLevel"),
-    costSavings:      get("f_costSavings"),
-    efficiencyGain:   get("f_efficiencyGain"),
-    paybackMonths:    get("f_paybackMonths"),
-    activeUsers:      get("f_activeUsers"),
-    adoptionRate:     get("f_adoptionRate"),
-    revenueImpact:    get("f_revenueImpact"),
-    cycleTimeReduction:     get("f_cycleTimeReduction"),
-    scheduleImpact:         get("f_scheduleImpact"),
-    productivityUplift:     get("f_productivityUplift"),
-    marginImprovement:      get("f_marginImprovement"),
-    toolsPlatformCharges:   get("f_toolsPlatformCharges"),
-    licenseCost:            get("f_licenseCost"),
-    developmentCost:        get("f_developmentCost"),
-    supportMaintenanceCost: get("f_supportMaintenanceCost"),
-    recurringCostAvoidance: get("f_recurringCostAvoidance"),
-    personClaims:           get("f_personClaims"),
-  };
-  // Rich text
-  rteFields.forEach(f=>{
-    const w=document.getElementById("rte_"+f);
-    record[f]=w?w._getHTML():"";
-  });
-  return record;
-}
-
-// ---- SAVE ----
-async function doSave(){
-  const record=collectRecord();
-  const errors=validate();
-  if(errors.length){ showErrors(errors); return; }
-
-  const overlay=document.getElementById("busyOverlay");
-  overlay.classList.add("show");
-
-  const FM=PD.fieldMap;
-  const NF=new Set(PD.numberFields);
-
-  const payload={ operation: record.id?"update":"create", id: record.id?String(record.id):"" };
-  const skip=new Set(["created","modified","id"]);
-  for(const [jsKey,spField] of Object.entries(FM)){
-    if(skip.has(jsKey)) continue;
-    const val=record[jsKey];
-    const s=(val==null?"":String(val)).trim();
-    if(s==="") continue;
-    payload[spField]=NF.has(jsKey)?Number(s):s;
-  }
-  if(record.personClaims) payload.person=record.personClaims;
-
-  try{
-    const res=await fetch(PD.saveFlowUrl,{
-      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)
-    });
-    let text="";
-    try{text=await res.text();}catch{}
-    if(!res.ok) throw new Error("HTTP "+res.status+": "+text);
-    window.opener?.postMessage({type:"CASE_SAVED",isNew:!record.id},window.opener.location.origin);
-    window.close();
-  }catch(err){
-    overlay.classList.remove("show");
-    showErrors([{field:"f_ideaName",msg:"Save failed: "+err.message}]);
-  }
-}
-
-document.getElementById("saveBtn").onclick  = doSave;
-document.getElementById("saveBtn2").onclick = doSave;
-document.getElementById("cancelBtn").onclick  = ()=>{window.opener?.postMessage({type:"CASE_CLOSED"},window.opener.location.origin);window.close();};
-document.getElementById("cancelBtn2").onclick = ()=>{window.opener?.postMessage({type:"CASE_CLOSED"},window.opener.location.origin);window.close();};
-</script>
-</body>
-</html>`;
-}
-
-function escAttrW(v) {
-  return String(v ?? "")
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  const hiddenField = els.caseForm?.elements.personClaims;
+  if (hiddenField) hiddenField.value = "";
 }
 
 // =============================================================================
@@ -1523,40 +1159,46 @@ function escAttrW(v) {
 function populateDropdowns() {
   const deptSel = document.querySelector('select[name="department"]');
   const confSel = document.querySelector('select[name="confidenceLevel"]');
+
   if (deptSel) deptSel.innerHTML = "";
   if (confSel) confSel.innerHTML = "";
+
   state.choices.department.forEach(c => {
     if (!c) return;
-    const o = document.createElement("option"); o.value = o.textContent = c; deptSel?.appendChild(o);
+    const o = document.createElement("option");
+    o.value = o.textContent = c;
+    deptSel?.appendChild(o);
   });
+
   (state.choices.confidenceLevel || []).forEach(c => {
     if (!c) return;
-    const o = document.createElement("option"); o.value = o.textContent = c; confSel?.appendChild(o);
+    const o = document.createElement("option");
+    o.value = o.textContent = c;
+    confSel?.appendChild(o);
   });
-}
-
-// =============================================================================
-// PEOPLE PICKER (main page — not really used since form is in popup)
-// =============================================================================
-function buildPeopleSelect() {
-  const container = document.getElementById("peoplePicker");
-  if (!container) return;
-  container.innerHTML = "";
 }
 
 // =============================================================================
 // DOM CACHE & EVENTS
 // =============================================================================
 function cacheElements() {
-  ["connectionBadge","refreshButton","exportButton","newCaseButton",
-   "caseRows","searchInput",
-   "summaryTotal","summarySavings","summaryEfficiency","summaryPayback","toast"
+  [
+    "connectionBadge", "refreshButton", "exportButton", "newCaseButton",
+    "caseRows", "searchInput",
+    "summaryTotal", "summarySavings", "summaryEfficiency", "summaryPayback",
+    "drawerBackdrop", "closeDrawerButton", "cancelButton",
+    "caseForm", "drawerTitle", "saveButton", "toast"
   ].forEach(id => { els[id] = document.getElementById(id); });
+  els.drawer = document.getElementById("caseDrawer");
 }
 
 function bindEvents() {
-  els.newCaseButton.addEventListener("click", () => openCaseWindow(null));
-  els.exportButton.addEventListener("click",  exportCsv);
+  els.newCaseButton.addEventListener("click",    () => openDrawer());
+  els.closeDrawerButton.addEventListener("click", closeDrawer);
+  els.cancelButton.addEventListener("click",      closeDrawer);
+  els.drawerBackdrop.addEventListener("click",    closeDrawer);
+  els.exportButton.addEventListener("click",      exportCsv);
+  els.caseForm.addEventListener("submit",         saveCurrentCase);
 
   els.searchInput.addEventListener("input", e => {
     state.search = e.target.value.trim().toLowerCase();
@@ -1567,6 +1209,14 @@ function bindEvents() {
     await reloadRecords();
     render();
   });
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && els.drawer.classList.contains("open")) closeDrawer();
+  });
+
+  document.addEventListener("wheel", e => {
+    if (document.activeElement.type === "number") e.preventDefault();
+  }, { passive: false });
 }
 
 // =============================================================================
@@ -1591,11 +1241,13 @@ function renderSummaries() {
 function renderTable() {
   renderSummaries();
   const rows = filtered();
+
   if (!rows.length) {
     els.caseRows.innerHTML =
-      `<tr class="empty-row"><td colspan="10">No business cases match the current view.</td></tr>`;
+      `<tr class="empty-row"><td colspan="11">No business cases match the current view.</td></tr>`;
     return;
   }
+
   els.caseRows.innerHTML = rows.map(r => `
     <tr>
       <td class="idea-cell">${esc(r.ideaName)}</td>
@@ -1619,7 +1271,7 @@ function renderTable() {
   els.caseRows.querySelectorAll("[data-edit-id]").forEach(btn =>
     btn.addEventListener("click", () => {
       const rec = state.records.find(x => String(x.id) === String(btn.dataset.editId));
-      if (rec) openCaseWindow(rec);
+      if (rec) openDrawer(rec);
     })
   );
 }
@@ -1637,48 +1289,390 @@ function filtered() {
 }
 
 // =============================================================================
+// DRAWER
+// =============================================================================
+function openDrawer(record = null) {
+  els.caseForm.reset();
+  resetPersonPicker();
+  clearAllEditors();
+  clearAllFieldErrors();
+  els.drawerTitle.textContent = record ? "Edit innovation case" : "New innovation case";
+
+  if (record) {
+    for (const key of Object.keys(CONFIG.fieldMap)) {
+      const ctrl = els.caseForm.elements[key];
+      if (!ctrl) continue;
+      const v = record[key];
+      if (v == null) continue;
+
+      if (CONFIG.richTextFields.has(key)) {
+        setEditorContent(key, v);
+      } else {
+        ctrl.value = v;
+      }
+    }
+    els.caseForm.elements.id.value = record.id;
+    fillPersonPicker(record);
+  } else {
+    els.caseForm.elements.id.value = "";
+    const c = els.caseForm.elements.confidenceLevel;
+    if (c) c.value = state.choices.confidenceLevel[0] || "";
+  }
+
+  els.drawerBackdrop.hidden = false;
+  els.drawer.classList.add("open");
+  els.drawer.setAttribute("aria-hidden", "false");
+  document.body.classList.add("drawer-open");
+  setTimeout(() => els.caseForm.elements.ideaName?.focus(), 30);
+}
+
+function closeDrawer() {
+  els.drawer.classList.remove("open");
+  els.drawer.setAttribute("aria-hidden", "true");
+  els.drawerBackdrop.hidden = true;
+  document.body.classList.remove("drawer-open");
+  resetPersonPicker();
+  clearAllFieldErrors();
+}
+
+// =============================================================================
+// VALIDATION & ERROR DISPLAY
+// =============================================================================
+const FIELD_LABELS = {
+  ideaName:               "Business Case idea",
+  department:             "Department",
+  problemStatement:       "Pain point users face today",
+  currentWorkarounds:     "Current workarounds failing",
+  proposedSolution:       "Innovation approach",
+  mvpScope:               "MVP scope",
+  valueProposition:       "Strategic Benefits",
+  costSavings:            "Cost savings",
+  efficiencyGain:         "Efficiency gain %",
+  paybackMonths:          "Payback period months",
+  adoptionRate:           "Adoption rate %",
+  revenueImpact:          "Revenue impact",
+  confidenceLevel:        "Confidence Level"
+};
+
+function validateForm(record) {
+  const errors = [];
+
+  if (!record.ideaName?.trim()) {
+    errors.push({ field: "ideaName", message: "Business Case idea is required." });
+  }
+
+  // Validate number ranges
+  const pctFields = [
+    { key: "efficiencyGain", label: "Efficiency gain %" },
+    { key: "adoptionRate",   label: "Adoption rate %" },
+    { key: "cycleTimeReduction", label: "Cycle time reduction %" },
+    { key: "scheduleImpact", label: "Schedule impact" },
+    { key: "productivityUplift", label: "Productivity uplift %" },
+    { key: "marginImprovement", label: "Margin improvement %" }
+  ];
+
+  pctFields.forEach(({ key, label }) => {
+    const v = Number(record[key]);
+    if (record[key] !== "" && record[key] !== null && (v < 0 || v > 100)) {
+      errors.push({ field: key, message: `${label} must be between 0 and 100.` });
+    }
+  });
+
+  const posFields = [
+    { key: "costSavings",          label: "Cost savings" },
+    { key: "paybackMonths",        label: "Payback period months" },
+    { key: "activeUsers",          label: "Active users" },
+    { key: "revenueImpact",        label: "Revenue impact" },
+    { key: "toolsPlatformCharges", label: "Tools and platform charges" },
+    { key: "licenseCost",          label: "License cost" },
+    { key: "developmentCost",      label: "Development cost" },
+    { key: "supportMaintenanceCost", label: "Support and maintenance" },
+    { key: "recurringCostAvoidance", label: "Recurring cost avoidance" }
+  ];
+
+  posFields.forEach(({ key, label }) => {
+    const v = Number(record[key]);
+    if (record[key] !== "" && record[key] !== null && v < 0) {
+      errors.push({ field: key, message: `${label} cannot be negative.` });
+    }
+  });
+
+  return errors;
+}
+
+function showFieldErrors(errors) {
+  clearAllFieldErrors();
+
+  errors.forEach(({ field, message }) => {
+    // Mark the input/editor red
+    const ctrl = els.caseForm.elements[field];
+    if (ctrl) {
+      ctrl.classList.add("field-error");
+      // Add error message below
+      const errSpan = document.createElement("span");
+      errSpan.className = "field-error-msg";
+      errSpan.textContent = message;
+      ctrl.parentNode.appendChild(errSpan);
+    }
+
+    // For rich text editors
+    if (CONFIG.richTextFields.has(field)) {
+      const editor = document.querySelector(`.rich-editor[data-field="${field}"]`);
+      if (editor) {
+        editor.classList.add("field-error");
+        const wrapper = editor.closest(".rich-editor-wrapper");
+        if (wrapper) {
+          const existing = wrapper.querySelector(".field-error-msg");
+          if (!existing) {
+            const errSpan = document.createElement("span");
+            errSpan.className = "field-error-msg";
+            errSpan.textContent = message;
+            wrapper.appendChild(errSpan);
+          }
+        }
+      }
+    }
+  });
+}
+
+function clearAllFieldErrors() {
+  els.caseForm?.querySelectorAll(".field-error").forEach(el => el.classList.remove("field-error"));
+  els.caseForm?.querySelectorAll(".field-error-msg").forEach(el => el.remove());
+}
+
+function showErrorModal(errors) {
+  // Remove any existing modal
+  document.getElementById("errorModal")?.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "errorModal";
+  modal.className = "error-modal";
+  modal.setAttribute("role", "alertdialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-labelledby", "errorModalTitle");
+
+  const errorList = errors.map(e =>
+    `<li><span class="err-field">${esc(FIELD_LABELS[e.field] || e.field)}:</span> ${esc(e.message)}</li>`
+  ).join("");
+
+  modal.innerHTML = `
+    <div class="error-modal-box">
+      <div class="error-modal-header">
+        <span class="error-modal-icon">⚠</span>
+        <h3 id="errorModalTitle">Please fix these errors</h3>
+        <button class="icon-button error-modal-close" type="button" aria-label="Close">
+          <svg><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <ul class="error-list">${errorList}</ul>
+      <button class="button primary error-modal-ok" type="button">OK, I'll fix these</button>
+    </div>
+  `;
+
+  modal.querySelector(".error-modal-close").addEventListener("click", () => modal.remove());
+  modal.querySelector(".error-modal-ok").addEventListener("click", () => {
+    modal.remove();
+    // Scroll to first error field
+    const firstError = els.caseForm.querySelector(".field-error, .rich-editor.field-error");
+    if (firstError) {
+      firstError.scrollIntoView({ behavior: "smooth", block: "center" });
+      firstError.focus?.();
+    }
+  });
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+
+  // Append to the drawer so it appears over it
+  els.drawer.appendChild(modal);
+
+  // Focus the OK button
+  setTimeout(() => modal.querySelector(".error-modal-ok")?.focus(), 50);
+}
+
+// =============================================================================
+// SAVE
+// =============================================================================
+async function saveCurrentCase(e) {
+  e.preventDefault();
+
+  const fd     = new FormData(els.caseForm);
+  const record = formToRecord(fd);
+
+  const errors = validateForm(record);
+  if (errors.length) {
+    showFieldErrors(errors);
+    showErrorModal(errors);
+    return;
+  }
+
+  setBusy(true);
+  try {
+    const payload = buildSharePointPayload(record);
+    console.log("📤 Saving payload:", JSON.stringify(payload, null, 2));
+    await saveViaFlow(payload);
+    await reloadRecords();
+    closeDrawer();
+    render();
+    showToast(record.id ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
+  } catch (err) {
+    console.error("Save failed:", err);
+    // Parse error to identify field if possible
+    const errMsg = err.message || "";
+    const saveErrors = parseSaveError(errMsg);
+    if (saveErrors.length) {
+      showFieldErrors(saveErrors);
+      showErrorModal(saveErrors);
+    } else {
+      showErrorModal([{ field: "general", message: "Save failed: " + errMsg }]);
+      showToast("⚠ Save failed — see error details.");
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
+function parseSaveError(errMsg) {
+  const lower = errMsg.toLowerCase();
+  const errors = [];
+
+  // Try to match known field names in error
+  const fieldPatterns = [
+    { pattern: /title/i,         field: "ideaName",      label: "Business Case idea" },
+    { pattern: /field_12|cost.sav/i, field: "costSavings",  label: "Cost savings" },
+    { pattern: /field_13|effici/i,   field: "efficiencyGain", label: "Efficiency gain %" },
+    { pattern: /field_14|payback/i,  field: "paybackMonths",  label: "Payback period months" },
+    { pattern: /field_16|adoption/i, field: "adoptionRate",    label: "Adoption rate %" }
+  ];
+
+  fieldPatterns.forEach(({ pattern, field, label }) => {
+    if (pattern.test(errMsg)) {
+      errors.push({ field, message: `${label}: ${errMsg}` });
+    }
+  });
+
+  return errors;
+}
+
+async function saveViaFlow(payload) {
+  const res = await fetch(CONFIG.saveFlowUrl, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(payload)
+  });
+  let text = "";
+  try { text = await res.text(); } catch { /* ignore */ }
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
+  try { return text ? JSON.parse(text) : {}; } catch { return {}; }
+}
+
+function buildSharePointPayload(record) {
+  const payload = {
+    operation: record.id ? "update" : "create",
+    id:        record.id ? String(record.id) : ""
+  };
+
+  for (const [jsKey, spField] of Object.entries(CONFIG.fieldMap)) {
+    if (["created", "modified", "id"].includes(jsKey)) continue;
+
+    const val = record[jsKey];
+    const s   = (val == null ? "" : String(val)).trim();
+    if (s === "") continue;
+
+    // For rich text, strip HTML for number fields; keep for text fields
+    if (CONFIG.numberFields.has(jsKey)) {
+      payload[spField] = Number(s);
+    } else {
+      payload[spField] = s;
+    }
+  }
+
+  if (record.personClaims) {
+    payload.person = record.personClaims;
+  }
+
+  return payload;
+}
+
+function formToRecord(fd) {
+  const rec = {};
+  for (const key of Object.keys(CONFIG.fieldMap)) {
+    if (["created", "modified"].includes(key)) continue;
+    const raw = fd.get(key);
+    rec[key]  = raw == null ? "" : String(raw).trim();
+  }
+  rec.id     = fd.get("id") || "";
+  rec.personClaims      = fd.get("personClaims") || "";
+  rec.personDisplayName = state.selectedPerson?.displayName || "";
+  rec.personEmail       = state.selectedPerson?.email       || "";
+
+  return rec;
+}
+
+// =============================================================================
 // EXPORT CSV
 // =============================================================================
 function exportCsv() {
   const cols = [
-    ["ideaName","Business case idea"],["personDisplayName","Person"],
-    ["department","Department"],["problemStatement","Problem statement"],
-    ["currentWorkarounds","Current workarounds"],["proposedSolution","Innovation approach"],
-    ["mvpScope","MVP scope"],["valueProposition","Value proposition"],
-    ["costSavings","Cost savings"],["efficiencyGain","Efficiency gain %"],
-    ["paybackMonths","Payback period months"],["activeUsers","Active users"],
-    ["adoptionRate","Adoption rate %"],["revenueImpact","Revenue impact"],
-    ["cycleTimeReduction","Cycle time reduction %"],["productivityUplift","Productivity uplift %"],
-    ["scheduleImpact","Schedule impact"],["goToMarketChannels","Centralized channel"],
-    ["changeManagement","Change management"],["rolloutPlan","Rollout plan"],
-    ["toolsPlatformCharges","Tools and platform"],["licenseCost","License cost"],
-    ["developmentCost","Development cost"],["supportMaintenanceCost","Support and maintenance"],
+    ["ideaName",              "Business case idea"],
+    ["personDisplayName",     "Person"],
+    ["department",            "Department or GP"],
+    ["problemStatement",      "Problem statement"],
+    ["scaleBusinessImpact",   "Scale and business impact"],
+    ["currentWorkarounds",    "Current workarounds failing"],
+    ["proposedSolution",      "Innovation approach"],
+    ["mvpScope",              "MVP scope"],
+    ["enabler",               "Technology or process enabler"],
+    ["unfairAdvantage",       "Unfair advantage"],
+    ["valueProposition",      "Value proposition"],
+    ["costSavings",           "Cost savings"],
+    ["efficiencyGain",        "Efficiency gain %"],
+    ["paybackMonths",         "Payback period months"],
+    ["activeUsers",           "Active users"],
+    ["adoptionRate",          "Adoption rate %"],
+    ["revenueImpact",         "Revenue impact"],
+    ["cycleTimeReduction",    "Cycle time reduction %"],
+    ["productivityUplift",    "Productivity uplift %"],
+    ["scheduleImpact",        "Schedule impact"],
+    ["goToMarketChannels",    "Digital and direct sales channel"],
+    ["changeManagement",      "Change management and training"],
+    ["rolloutPlan",           "Phased rollout plan"],
+    ["toolsPlatformCharges",  "Tools and platform charges"],
+    ["licenseCost",           "License cost"],
+    ["developmentCost",       "Development cost"],
+    ["supportMaintenanceCost","Support and maintenance"],
     ["recurringCostAvoidance","Recurring cost avoidance"],
-    ["marginImprovement","Margin improvement %"],["scalabilityNotes","Scalability notes"],
-    ["confidenceLevel","Confidence Level"],["modified","Updated"]
+    ["marginImprovement",     "Margin improvement %"],
+    ["scalabilityNotes",      "Scalable to all GPs"],
+    ["confidenceLevel",       "Confidence Level"],
+    ["modified",              "Updated"]
   ];
+
   const rows = filtered();
   const csv  = [
-    cols.map(([,l]) => csvQ(l)).join(","),
-    ...rows.map(r => cols.map(([k]) => csvQ(
-      CONFIG.richTextFields.has(k) ? stripHtml(r[k]) : r[k]
-    )).join(","))
+    cols.map(([, l]) => csvQ(l)).join(","),
+    ...rows.map(r => {
+      return cols.map(([k]) => {
+        // Strip HTML tags for CSV export
+        const val = CONFIG.richTextFields.has(k) ? stripHtml(r[k]) : r[k];
+        return csvQ(val);
+      }).join(",");
+    })
   ].join("\r\n");
+
   const a = Object.assign(document.createElement("a"), {
-    href: URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })),
-    download: `innovation-cases-${new Date().toISOString().slice(0,10)}.csv`
+    href:     URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })),
+    download: `innovation-cases-${new Date().toISOString().slice(0, 10)}.csv`
   });
-  document.body.append(a); a.click(); a.remove();
+  document.body.append(a);
+  a.click();
+  a.remove();
 }
 
 // =============================================================================
 // UTILITIES
 // =============================================================================
-function stripHtml(h) {
-  if (!h) return "";
-  return h.replace(/<[^>]*>/g,"")
-    .replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">")
-    .replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim();
+function stripHtml(html) {
+  if (!html) return "";
+  return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
 }
 
 function setBusy(v) {
@@ -1711,7 +1705,8 @@ const avg  = vals => vals.length ? vals.reduce((t, v) => t + v, 0) / vals.length
 function fmt$(v) {
   const n = Number(v) || 0;
   return new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD",
+    style:                "currency",
+    currency:             "USD",
     maximumFractionDigits: n >= 1000 ? 0 : 2
   }).format(n);
 }
@@ -1737,12 +1732,19 @@ function fmtDate(v) {
 
 function esc(v) {
   return String(v ?? "")
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+    .replace(/&/g,  "&amp;")
+    .replace(/</g,  "&lt;")
+    .replace(/>/g,  "&gt;")
+    .replace(/"/g,  "&quot;")
+    .replace(/'/g,  "&#39;");
 }
 
-function escAttr(v) { return esc(v).replace(/`/g,"&#96;"); }
-function csvQ(v) { const t = v==null?"":String(v); return `"${t.replace(/"/g,'""')}"`; }
+function escAttr(v) { return esc(v).replace(/`/g, "&#96;"); }
+
+function csvQ(v) {
+  const t = v == null ? "" : String(v);
+  return `"${t.replace(/"/g, '""')}"`;
+}
 
 // =============================================================================
 // CONFIG
