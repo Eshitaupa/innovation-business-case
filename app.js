@@ -636,6 +636,8 @@ const CONFIG = {
 
   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
+  deleteFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/de240397094f4fe39a610c6a0a4d5997/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=gJM20WCbDMWgARxFc6pbnqc6oq9cpX5Pw-aLgpp5a-s",
+
   fieldMap: {
     id:                     "Id",
     ideaName:               "Title",
@@ -676,10 +678,18 @@ const CONFIG = {
     "recurringCostAvoidance","marginImprovement"
   ]),
 
-  // Rich text fields (textarea → contenteditable editor)
+  // Rich text fields (contenteditable editor)
   richTextFields: new Set([
     "problemStatement","currentWorkarounds","proposedSolution","mvpScope",
     "valueProposition","goToMarketChannels","changeManagement","rolloutPlan","scalabilityNotes"
+  ]),
+
+  // Fields that were previously rich text but are now plain <textarea> or <input>
+  // These are excluded from rich text editor building
+  plainTextFields: new Set([
+    "costSavings","revenueImpact","toolsPlatformCharges","licenseCost",
+    "developmentCost","supportMaintenanceCost","recurringCostAvoidance",
+    "productivityUplift","marginImprovement"
   ]),
 
   // Max character limits for rich text fields
@@ -713,7 +723,7 @@ const state = {
   busy:           false,
   toastTimer:     0,
   selectedPerson: null,
-  richTextValues: {}  // stores HTML content for rich text editors
+  richTextValues: {}
 };
 
 const els = {};
@@ -743,12 +753,10 @@ function buildRichTextEditors() {
 
     const limit = CONFIG.richTextLimits[fieldName];
 
-    // Create wrapper
     const wrapper = document.createElement("div");
     wrapper.className = "rich-editor-wrapper";
     wrapper.setAttribute("data-field", fieldName);
 
-    // Toolbar
     const toolbar = document.createElement("div");
     toolbar.className = "rich-toolbar";
     toolbar.innerHTML = `
@@ -767,7 +775,6 @@ function buildRichTextEditors() {
       <button type="button" class="rich-btn" data-cmd="removeFormat" title="Clear formatting">&#10005; Clear</button>
     `;
 
-    // Content editable area
     const editor = document.createElement("div");
     editor.className = "rich-editor";
     editor.contentEditable = "true";
@@ -776,13 +783,11 @@ function buildRichTextEditors() {
     editor.setAttribute("data-field", fieldName);
     editor.setAttribute("data-limit", limit);
 
-    // Character counter
     const counter = document.createElement("div");
     counter.className = "rich-counter";
     counter.id = `counter-${fieldName}`;
     counter.textContent = `0 / ${limit}`;
 
-    // Limit warning popup
     const limitMsg = document.createElement("div");
     limitMsg.className = "rich-limit-msg";
     limitMsg.id = `limit-${fieldName}`;
@@ -793,13 +798,11 @@ function buildRichTextEditors() {
     wrapper.appendChild(counter);
     wrapper.appendChild(limitMsg);
 
-    // Insert before the original textarea and hide it
     textarea.parentNode.insertBefore(wrapper, textarea);
     textarea.style.display = "none";
 
     editor.dataset.lastValidHtml = "";
 
-    // Toolbar button events
     toolbar.querySelectorAll(".rich-btn[data-cmd]").forEach(btn => {
       btn.addEventListener("mousedown", e => e.preventDefault());
       btn.addEventListener("click", e => {
@@ -811,7 +814,6 @@ function buildRichTextEditors() {
       });
     });
 
-    // Input events
     editor.addEventListener("beforeinput", e => {
       if (e.inputType && e.inputType.startsWith("delete")) return;
       const currentLen = getEditorTextLength(editor);
@@ -839,7 +841,6 @@ function buildRichTextEditors() {
       syncEditorToTextarea(fieldName);
     });
 
-    // Update toolbar active states on selection
     ["keyup", "mouseup", "focus", "click"].forEach(evt => {
       editor.addEventListener(evt, () => {
         saveRichSelection(editor);
@@ -852,7 +853,6 @@ function buildRichTextEditors() {
 function enforceLimit(editor, counter, limitMsg, limit) {
   const len = getEditorTextLength(editor);
   counter.textContent = `${len} / ${limit}`;
-
   if (len > limit) {
     counter.classList.add("over");
     limitMsg.classList.add("show");
@@ -871,11 +871,6 @@ function updateCounter(editor, counter, limitMsg, limit) {
   counter.classList.toggle("over", len > limit);
   limitMsg.classList.toggle("show", len > limit);
   if (len <= limit) editor.dataset.lastValidHtml = editor.innerHTML;
-}
-
-function trimEditorToLimit(editor, limit) {
-  if (getEditorTextLength(editor) <= limit) return;
-  restoreLastValidEditorState(editor);
 }
 
 function getEditorTextLength(editor) {
@@ -1013,7 +1008,7 @@ async function loadFromFlow() {
           : [...CONFIG.fallbackChoices.department];
     } else {
       const rows = extractRows(data);
-      state.choices.department     = uniqueChoices(rows, "field_2")                 || [...CONFIG.fallbackChoices.department];
+      state.choices.department      = uniqueChoices(rows, "field_2")                 || [...CONFIG.fallbackChoices.department];
       state.choices.confidenceLevel = uniqueChoices(rows, "Confidence_x0020_Level") || [...CONFIG.fallbackChoices.confidenceLevel];
     }
 
@@ -1028,7 +1023,7 @@ async function loadFromFlow() {
     state.records  = [];
     state.allUsers = [];
     state.choices  = {
-      department:     [...CONFIG.fallbackChoices.department],
+      department:      [...CONFIG.fallbackChoices.department],
       confidenceLevel: [...CONFIG.fallbackChoices.confidenceLevel]
     };
     state.mode = "error";
@@ -1124,9 +1119,9 @@ function buildPeopleSelect() {
   container.innerHTML = "";
 
   const filterInput = document.createElement("input");
-  filterInput.type        = "text";
-  filterInput.id          = "personFilterInput";
-  filterInput.placeholder = "Type name or email…";
+  filterInput.type         = "text";
+  filterInput.id           = "personFilterInput";
+  filterInput.placeholder  = "Type name or email…";
   filterInput.autocomplete = "off";
   filterInput.setAttribute("aria-label", "Search for a person");
 
@@ -1273,7 +1268,7 @@ function cacheElements() {
     "caseRows", "searchInput",
     "summaryTotal", "summarySavings", "summaryEfficiency", "summaryPayback",
     "drawerBackdrop", "closeDrawerButton", "cancelButton",
-    "caseForm", "drawerTitle", "saveButton", "toast"
+    "caseForm", "drawerTitle", "saveButton", "deleteButton", "toast"
   ].forEach(id => { els[id] = document.getElementById(id); });
   els.drawer = document.getElementById("caseDrawer");
 }
@@ -1285,6 +1280,10 @@ function bindEvents() {
   els.drawerBackdrop.addEventListener("click",    closeDrawer);
   els.exportButton.addEventListener("click",      exportCsv);
   els.caseForm.addEventListener("submit",         saveCurrentCase);
+
+  if (els.deleteButton) {
+    els.deleteButton.addEventListener("click", handleDeleteClick);
+  }
 
   els.searchInput.addEventListener("input", e => {
     state.search = e.target.value.trim().toLowerCase();
@@ -1306,6 +1305,90 @@ function bindEvents() {
 }
 
 // =============================================================================
+// DELETE
+// =============================================================================
+function handleDeleteClick() {
+  const id = els.caseForm.elements.id?.value;
+  if (!id) return;
+
+  const rec = state.records.find(r => String(r.id) === String(id));
+  const name = rec?.ideaName || "this record";
+
+  showConfirmModal(
+    "Delete business case",
+    `Are you sure you want to delete "<strong>${esc(name)}</strong>"? This action cannot be undone.`,
+    "Delete",
+    async () => {
+      await deleteRecord(id);
+    }
+  );
+}
+
+async function deleteRecord(id) {
+  setBusy(true);
+  try {
+    const payload = { operation: "delete", id: String(id) };
+    const res = await fetch(CONFIG.saveFlowUrl, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload)
+    });
+    let text = "";
+    try { text = await res.text(); } catch { /* ignore */ }
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
+
+    await reloadRecords();
+    closeDrawer();
+    render();
+    showToast("✓ Record deleted.");
+  } catch (err) {
+    console.error("Delete failed:", err);
+    showToast("⚠ Delete failed — " + err.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function showConfirmModal(title, bodyHtml, confirmLabel, onConfirm) {
+  document.getElementById("confirmModal")?.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "confirmModal";
+  modal.className = "error-modal confirm-modal";
+  modal.setAttribute("role", "alertdialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-labelledby", "confirmModalTitle");
+
+  modal.innerHTML = `
+    <div class="error-modal-box">
+      <div class="error-modal-header">
+        <span class="error-modal-icon">🗑</span>
+        <h3 id="confirmModalTitle">${esc(title)}</h3>
+        <button class="icon-button error-modal-close" type="button" aria-label="Close">
+          <svg><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <p class="confirm-body">${bodyHtml}</p>
+      <div class="confirm-actions">
+        <button class="button secondary confirm-cancel" type="button">Cancel</button>
+        <button class="button danger confirm-ok" type="button">${esc(confirmLabel)}</button>
+      </div>
+    </div>
+  `;
+
+  modal.querySelector(".error-modal-close").addEventListener("click", () => modal.remove());
+  modal.querySelector(".confirm-cancel").addEventListener("click",    () => modal.remove());
+  modal.querySelector(".confirm-ok").addEventListener("click", () => {
+    modal.remove();
+    onConfirm();
+  });
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+
+  els.drawer.appendChild(modal);
+  setTimeout(() => modal.querySelector(".confirm-ok")?.focus(), 50);
+}
+
+// =============================================================================
 // RENDER
 // =============================================================================
 function render() { renderBadge(); renderSummaries(); renderTable(); }
@@ -1319,7 +1402,7 @@ function renderBadge() {
 function renderSummaries() {
   const f = filtered();
   els.summaryTotal.textContent      = f.length;
-  els.summarySavings.textContent    = fmt$(sum(f, "costSavings"));
+  els.summarySavings.textContent    = fmtPlain(sum(f, "costSavings"));
   els.summaryEfficiency.textContent = `${fmtN(avg(nums(f, "efficiencyGain")), 1)}%`;
   els.summaryPayback.textContent    = `${fmtN(avg(nums(f, "paybackMonths")), 0)} mo`;
 }
@@ -1339,11 +1422,11 @@ function renderTable() {
       <td class="idea-cell">${esc(r.ideaName)}</td>
       <td>${esc(r.personDisplayName)}</td>
       <td class="text-cell">${stripHtml(r.valueProposition)}</td>
-      <td class="number-cell">${fmt$(r.costSavings)}</td>
+      <td class="number-cell">${fmtPlain(r.costSavings)}</td>
       <td class="number-cell">${fmtPct(r.efficiencyGain)}</td>
       <td class="number-cell">${fmtMo(r.paybackMonths)}</td>
       <td class="number-cell">${fmtPct(r.adoptionRate)}</td>
-      <td class="number-cell">${fmt$(r.revenueImpact)}</td>
+      <td class="number-cell">${fmtPlain(r.revenueImpact)}</td>
       <td class="number-cell">${fmtDate(r.modified || r.created)}</td>
       <td class="action-col">
         <button class="icon-button row-action" type="button"
@@ -1383,6 +1466,11 @@ function openDrawer(record = null) {
   clearAllEditors();
   clearAllFieldErrors();
   els.drawerTitle.textContent = record ? "Edit innovation case" : "New innovation case";
+
+  // Show/hide delete button based on whether editing an existing record
+  if (els.deleteButton) {
+    els.deleteButton.style.display = record ? "" : "none";
+  }
 
   if (record) {
     for (const key of Object.keys(CONFIG.fieldMap)) {
@@ -1447,12 +1535,11 @@ function validateForm(record) {
     errors.push({ field: "ideaName", message: "Business Case idea is required." });
   }
 
-  // Validate number ranges
   const pctFields = [
-    { key: "efficiencyGain", label: "Efficiency gain %" },
-    { key: "adoptionRate",   label: "Adoption rate %" },
+    { key: "efficiencyGain",    label: "Efficiency gain %" },
+    { key: "adoptionRate",      label: "Adoption rate %" },
     { key: "cycleTimeReduction", label: "Cycle time reduction %" },
-    { key: "scheduleImpact", label: "Schedule impact" },
+    { key: "scheduleImpact",    label: "Schedule impact" },
     { key: "productivityUplift", label: "Productivity uplift %" },
     { key: "marginImprovement", label: "Margin improvement %" }
   ];
@@ -1490,18 +1577,15 @@ function showFieldErrors(errors) {
   clearAllFieldErrors();
 
   errors.forEach(({ field, message }) => {
-    // Mark the input/editor red
     const ctrl = els.caseForm.elements[field];
     if (ctrl) {
       ctrl.classList.add("field-error");
-      // Add error message below
       const errSpan = document.createElement("span");
       errSpan.className = "field-error-msg";
       errSpan.textContent = message;
       ctrl.parentNode.appendChild(errSpan);
     }
 
-    // For rich text editors
     if (CONFIG.richTextFields.has(field)) {
       const editor = document.querySelector(`.rich-editor[data-field="${field}"]`);
       if (editor) {
@@ -1527,7 +1611,6 @@ function clearAllFieldErrors() {
 }
 
 function showErrorModal(errors) {
-  // Remove any existing modal
   document.getElementById("errorModal")?.remove();
 
   const modal = document.createElement("div");
@@ -1558,7 +1641,6 @@ function showErrorModal(errors) {
   modal.querySelector(".error-modal-close").addEventListener("click", () => modal.remove());
   modal.querySelector(".error-modal-ok").addEventListener("click", () => {
     modal.remove();
-    // Scroll to first error field
     const firstError = els.caseForm.querySelector(".field-error, .rich-editor.field-error");
     if (firstError) {
       firstError.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1567,10 +1649,7 @@ function showErrorModal(errors) {
   });
   modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
 
-  // Append to the drawer so it appears over it
   els.drawer.appendChild(modal);
-
-  // Focus the OK button
   setTimeout(() => modal.querySelector(".error-modal-ok")?.focus(), 50);
 }
 
@@ -1601,7 +1680,6 @@ async function saveCurrentCase(e) {
     showToast(record.id ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
   } catch (err) {
     console.error("Save failed:", err);
-    // Parse error to identify field if possible
     const errMsg = err.message || "";
     const saveErrors = parseSaveError(errMsg);
     if (saveErrors.length) {
@@ -1617,16 +1695,14 @@ async function saveCurrentCase(e) {
 }
 
 function parseSaveError(errMsg) {
-  const lower = errMsg.toLowerCase();
   const errors = [];
 
-  // Try to match known field names in error
   const fieldPatterns = [
-    { pattern: /title/i,         field: "ideaName",      label: "Business Case idea" },
-    { pattern: /field_12|cost.sav/i, field: "costSavings",  label: "Cost savings" },
-    { pattern: /field_13|effici/i,   field: "efficiencyGain", label: "Efficiency gain %" },
-    { pattern: /field_14|payback/i,  field: "paybackMonths",  label: "Payback period months" },
-    { pattern: /field_16|adoption/i, field: "adoptionRate",    label: "Adoption rate %" }
+    { pattern: /title/i,              field: "ideaName",      label: "Business Case idea" },
+    { pattern: /field_12|cost.sav/i,  field: "costSavings",   label: "Cost savings" },
+    { pattern: /field_13|effici/i,    field: "efficiencyGain", label: "Efficiency gain %" },
+    { pattern: /field_14|payback/i,   field: "paybackMonths",  label: "Payback period months" },
+    { pattern: /field_16|adoption/i,  field: "adoptionRate",   label: "Adoption rate %" }
   ];
 
   fieldPatterns.forEach(({ pattern, field, label }) => {
@@ -1663,7 +1739,6 @@ function buildSharePointPayload(record) {
     const s   = (val == null ? "" : String(val)).trim();
     if (s === "") continue;
 
-    // For rich text, strip HTML for number fields; keep for text fields
     if (CONFIG.numberFields.has(jsKey)) {
       payload[spField] = Number(s);
     } else {
@@ -1685,7 +1760,7 @@ function formToRecord(fd) {
     const raw = fd.get(key);
     rec[key]  = raw == null ? "" : String(raw).trim();
   }
-  rec.id     = fd.get("id") || "";
+  rec.id                = fd.get("id") || "";
   rec.personClaims      = fd.get("personClaims") || "";
   rec.personDisplayName = state.selectedPerson?.displayName || "";
   rec.personEmail       = state.selectedPerson?.email       || "";
@@ -1737,7 +1812,6 @@ function exportCsv() {
     cols.map(([, l]) => csvQ(l)).join(","),
     ...rows.map(r => {
       return cols.map(([k]) => {
-        // Strip HTML tags for CSV export
         const val = CONFIG.richTextFields.has(k) ? stripHtml(r[k]) : r[k];
         return csvQ(val);
       }).join(",");
@@ -1758,7 +1832,14 @@ function exportCsv() {
 // =============================================================================
 function stripHtml(html) {
   if (!html) return "";
-  return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+  return html
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g,  "<")
+    .replace(/&gt;/g,  ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
 }
 
 function setBusy(v) {
@@ -1788,11 +1869,21 @@ const sum  = (recs, k) => recs.reduce((t, r) => t + (Number(r[k]) || 0), 0);
 const nums = (recs, k) => recs.map(r => Number(r[k])).filter(v => isFinite(v) && v > 0);
 const avg  = vals => vals.length ? vals.reduce((t, v) => t + v, 0) / vals.length : 0;
 
+// Plain number format — no currency symbol
+function fmtPlain(v) {
+  const n = Number(v) || 0;
+  if (!n) return "";
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: n % 1 !== 0 ? 2 : 0
+  }).format(n);
+}
+
+// Legacy dollar format kept in case needed elsewhere
 function fmt$(v) {
   const n = Number(v) || 0;
   return new Intl.NumberFormat("en-US", {
-    style:                "currency",
-    currency:             "USD",
+    style:                 "currency",
+    currency:              "USD",
     maximumFractionDigits: n >= 1000 ? 0 : 2
   }).format(n);
 }
