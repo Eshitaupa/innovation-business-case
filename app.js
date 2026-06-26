@@ -684,7 +684,7 @@ const CONFIG = {
 
   // Max character limits for rich text fields
   richTextLimits: {
-    problemStatement:   2000,
+    problemStatement:   255,
     currentWorkarounds: 2000,
     proposedSolution:   3000,
     mvpScope:           2000,
@@ -741,7 +741,7 @@ function buildRichTextEditors() {
     const textarea = els.caseForm?.elements[fieldName];
     if (!textarea) return;
 
-    const limit = CONFIG.richTextLimits[fieldName] || 2000;
+    const limit = CONFIG.richTextLimits[fieldName];
 
     // Create wrapper
     const wrapper = document.createElement("div");
@@ -968,7 +968,7 @@ function setEditorContent(fieldName, htmlContent) {
   const editor = document.querySelector(`.rich-editor[data-field="${fieldName}"]`);
   const counter = document.getElementById(`counter-${fieldName}`);
   const limitMsg = document.getElementById(`limit-${fieldName}`);
-  const limit = CONFIG.richTextLimits[fieldName] || 2000;
+  const limit = CONFIG.richTextLimits[fieldName];
 
   if (editor) {
     editor.innerHTML = htmlContent || "";
