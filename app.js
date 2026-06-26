@@ -1313,43 +1313,29 @@ function handleDeleteClick(id) {
     }
   );
 }
-
 async function deleteRecord(id) {
   if (!id) return;
-
-  setBusy(true);
 
   const oldRecords = [...state.records];
 
   try {
-    // Remove row immediately from UI
     state.records = state.records.filter(r => String(r.id) !== String(id));
     render();
-
-    const payload = {
-      operation: "delete",
-      id: Number(id)
-    };
 
     const res = await fetch(CONFIG.deleteFlowUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ id: Number(id) })
     });
 
     const text = await res.text().catch(() => "");
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
+    if (!res.ok) throw new Error(text || `HTTP ${res.status}`);
 
-    await reloadRecords();
-    render();
     showToast("✓ Record deleted.");
   } catch (err) {
     state.records = oldRecords;
     render();
-    console.error("Delete failed:", err);
     showToast("⚠ Delete failed — " + err.message);
-  } finally {
-    setBusy(false);
   }
 }
 function showConfirmModal(title, bodyHtml, confirmLabel, onConfirm) {
