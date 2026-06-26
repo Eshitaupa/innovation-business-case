@@ -51,7 +51,6 @@ svg {
   padding: 24px 0 36px;
 }
 
-/* When form window is open, prevent body scroll */
 body.drawer-open { overflow: hidden; }
 
 /* =============================================================
@@ -126,6 +125,16 @@ body.drawer-open { overflow: hidden; }
   background: var(--accent-strong);
 }
 .button.secondary { background: var(--panel); }
+
+.button.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #ffffff;
+}
+.button.danger:hover {
+  border-color: #8b1a12;
+  background: #8b1a12;
+}
 
 /* =============================================================
    STATUS BADGE
@@ -273,8 +282,34 @@ tbody tr:active { background: #d6e6ff; }
   text-align: center;
 }
 
-.action-col { width: 72px; text-align: center; }
-.row-action { margin: 0 auto; }
+/* =============================================================
+   ACTION COLUMN — stacked edit + delete
+   ============================================================= */
+.action-col { width: 90px; text-align: center; vertical-align: middle; }
+
+.row-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.row-action {
+  margin: 0;
+  width: 34px;
+  min-height: 34px;
+}
+
+.row-delete {
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+
+.row-delete:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
 
 /* =============================================================
    DRAWER
@@ -435,10 +470,10 @@ textarea.field-error {
 }
 
 /* =============================================================
-   ERROR MODAL
+   ERROR / CONFIRM MODAL
    ============================================================= */
 .error-modal {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 20;
   background: rgba(18, 26, 22, 0.5);
@@ -479,9 +514,7 @@ textarea.field-error {
   color: var(--danger);
 }
 
-.error-modal-close {
-  flex: 0 0 auto;
-}
+.error-modal-close { flex: 0 0 auto; }
 
 .error-list {
   margin: 0 0 20px;
@@ -501,9 +534,19 @@ textarea.field-error {
   color: var(--danger);
 }
 
-.error-modal-ok {
-  width: 100%;
-  justify-content: center;
+.error-modal-ok { width: 100%; justify-content: center; }
+
+.confirm-body {
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 /* =============================================================
@@ -601,10 +644,6 @@ textarea.field-error {
 
 .rich-editor li { margin: 2px 0; }
 
-.rich-editor [style*="text-align: center"], .rich-editor div[align="center"], .rich-editor p[align="center"] { text-align: center; }
-.rich-editor [style*="text-align: right"], .rich-editor div[align="right"], .rich-editor p[align="right"] { text-align: right; }
-.rich-editor [style*="text-align: justify"], .rich-editor div[align="justify"], .rich-editor p[align="justify"] { text-align: justify; }
-
 .rich-counter {
   padding: 4px 10px;
   font-size: 11px;
@@ -681,6 +720,15 @@ textarea.field-error {
 #peoplePicker select { margin-top: 5px; border: 1px solid #ccc; }
 
 #personSelect { width: 100%; max-height: 120px; overflow-y: auto; border: 1px solid #ccc; }
+
+/* =============================================================
+   FOOTER
+   ============================================================= */
+.footer-right {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
 
 /* =============================================================
    TOAST

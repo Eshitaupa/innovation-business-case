@@ -627,7 +627,6 @@
 // =============================================================================
 // CONFIG
 // =============================================================================
-
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
@@ -678,21 +677,17 @@ const CONFIG = {
     "recurringCostAvoidance","marginImprovement"
   ]),
 
-  // Rich text fields (contenteditable editor)
   richTextFields: new Set([
     "problemStatement","currentWorkarounds","proposedSolution","mvpScope",
     "valueProposition","goToMarketChannels","changeManagement","rolloutPlan","scalabilityNotes"
   ]),
 
-  // Fields that were previously rich text but are now plain <textarea> or <input>
-  // These are excluded from rich text editor building
   plainTextFields: new Set([
     "costSavings","revenueImpact","toolsPlatformCharges","licenseCost",
     "developmentCost","supportMaintenanceCost","recurringCostAvoidance",
     "productivityUplift","marginImprovement"
   ]),
 
-  // Max character limits for rich text fields
   richTextLimits: {
     problemStatement:   255,
     currentWorkarounds: 2000,
@@ -1268,7 +1263,7 @@ function cacheElements() {
     "caseRows", "searchInput",
     "summaryTotal", "summarySavings", "summaryEfficiency", "summaryPayback",
     "drawerBackdrop", "closeDrawerButton", "cancelButton",
-    "caseForm", "drawerTitle", "saveButton", "deleteButton", "toast"
+    "caseForm", "drawerTitle", "saveButton", "toast"
   ].forEach(id => { els[id] = document.getElementById(id); });
   els.drawer = document.getElementById("caseDrawer");
 }
@@ -1280,10 +1275,6 @@ function bindEvents() {
   els.drawerBackdrop.addEventListener("click",    closeDrawer);
   els.exportButton.addEventListener("click",      exportCsv);
   els.caseForm.addEventListener("submit",         saveCurrentCase);
-
-  if (els.deleteButton) {
-    els.deleteButton.addEventListener("click", handleDeleteClick);
-  }
 
   els.searchInput.addEventListener("input", e => {
     state.search = e.target.value.trim().toLowerCase();
@@ -1307,8 +1298,7 @@ function bindEvents() {
 // =============================================================================
 // DELETE
 // =============================================================================
-function handleDeleteClick() {
-  const id = els.caseForm.elements.id?.value;
+function handleDeleteClick(id) {
   if (!id) return;
 
   const rec = state.records.find(r => String(r.id) === String(id));
@@ -1338,7 +1328,6 @@ async function deleteRecord(id) {
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
 
     await reloadRecords();
-    closeDrawer();
     render();
     showToast("✓ Record deleted.");
   } catch (err) {
@@ -1384,7 +1373,7 @@ function showConfirmModal(title, bodyHtml, confirmLabel, onConfirm) {
   });
   modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
 
-  els.drawer.appendChild(modal);
+  document.body.appendChild(modal);
   setTimeout(() => modal.querySelector(".confirm-ok")?.focus(), 50);
 }
 
@@ -1413,7 +1402,7 @@ function renderTable() {
 
   if (!rows.length) {
     els.caseRows.innerHTML =
-      `<tr class="empty-row"><td colspan="11">No business cases match the current view.</td></tr>`;
+      `<tr class="empty-row"><td colspan="10">No business cases match the current view.</td></tr>`;
     return;
   }
 
@@ -1429,11 +1418,18 @@ function renderTable() {
       <td class="number-cell">${fmtPlain(r.revenueImpact)}</td>
       <td class="number-cell">${fmtDate(r.modified || r.created)}</td>
       <td class="action-col">
-        <button class="icon-button row-action" type="button"
-          title="Edit" aria-label="Edit ${escAttr(r.ideaName || "case")}"
-          data-edit-id="${escAttr(r.id)}">
-          <svg><use href="#icon-edit"></use></svg>
-        </button>
+        <div class="row-actions">
+          <button class="icon-button row-action" type="button"
+            title="Edit" aria-label="Edit ${escAttr(r.ideaName || "case")}"
+            data-edit-id="${escAttr(r.id)}">
+            <svg><use href="#icon-edit"></use></svg>
+          </button>
+          <button class="icon-button row-action row-delete" type="button"
+            title="Delete" aria-label="Delete ${escAttr(r.ideaName || "case")}"
+            data-delete-id="${escAttr(r.id)}">
+            <svg><use href="#icon-trash"></use></svg>
+          </button>
+        </div>
       </td>
     </tr>`).join("");
 
@@ -1441,6 +1437,12 @@ function renderTable() {
     btn.addEventListener("click", () => {
       const rec = state.records.find(x => String(x.id) === String(btn.dataset.editId));
       if (rec) openDrawer(rec);
+    })
+  );
+
+  els.caseRows.querySelectorAll("[data-delete-id]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      handleDeleteClick(btn.dataset.deleteId);
     })
   );
 }
@@ -1466,11 +1468,6 @@ function openDrawer(record = null) {
   clearAllEditors();
   clearAllFieldErrors();
   els.drawerTitle.textContent = record ? "Edit innovation case" : "New innovation case";
-
-  // Show/hide delete button based on whether editing an existing record
-  if (els.deleteButton) {
-    els.deleteButton.style.display = record ? "" : "none";
-  }
 
   if (record) {
     for (const key of Object.keys(CONFIG.fieldMap)) {
@@ -1869,7 +1866,6 @@ const sum  = (recs, k) => recs.reduce((t, r) => t + (Number(r[k]) || 0), 0);
 const nums = (recs, k) => recs.map(r => Number(r[k])).filter(v => isFinite(v) && v > 0);
 const avg  = vals => vals.length ? vals.reduce((t, v) => t + v, 0) / vals.length : 0;
 
-// Plain number format — no currency symbol
 function fmtPlain(v) {
   const n = Number(v) || 0;
   if (!n) return "";
@@ -1878,7 +1874,6 @@ function fmtPlain(v) {
   }).format(n);
 }
 
-// Legacy dollar format kept in case needed elsewhere
 function fmt$(v) {
   const n = Number(v) || 0;
   return new Intl.NumberFormat("en-US", {
@@ -1922,7 +1917,6 @@ function csvQ(v) {
   const t = v == null ? "" : String(v);
   return `"${t.replace(/"/g, '""')}"`;
 }
-
 // =============================================================================
 // CONFIG
 // =============================================================================
