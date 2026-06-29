@@ -1351,40 +1351,115 @@ function showConfirmModal(title, bodyHtml, confirmLabel, onConfirm) {
 
   const modal = document.createElement("div");
   modal.id = "confirmModal";
-  modal.className = "error-modal confirm-modal";
   modal.setAttribute("role", "alertdialog");
   modal.setAttribute("aria-modal", "true");
   modal.setAttribute("aria-labelledby", "confirmModalTitle");
 
+  // Inline styles so z-index is guaranteed regardless of CSS load order
+  Object.assign(modal.style, {
+    position:       "fixed",
+    inset:          "0",
+    zIndex:         "9999",        // above drawer (11) and error modal (20)
+    background:     "rgba(18,26,22,0.5)",
+    display:        "flex",
+    alignItems:     "center",
+    justifyContent: "center",
+    padding:        "20px"
+  });
+
+  const name = bodyHtml.replace(/<[^>]*>/g, "").replace(/"/g, "");
+
   modal.innerHTML = `
-    <div class="error-modal-box">
-      <div class="error-modal-header">
-        <span class="error-modal-icon">🗑</span>
-        <h3 id="confirmModalTitle">${esc(title)}</h3>
-        <button class="icon-button error-modal-close" type="button" aria-label="Close">
-          <svg><use href="#icon-close"></use></svg>
+    <div style="
+      background: var(--panel, #fff);
+      border-radius: 12px;
+      border: 1px solid var(--danger-line, #fca5a5);
+      box-shadow: 0 18px 48px rgba(13,32,66,0.18);
+      padding: 24px;
+      max-width: 440px;
+      width: 100%;
+    ">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+        <div style="
+          width:36px;height:36px;border-radius:50%;
+          background:var(--danger-soft,#fff1f0);
+          display:flex;align-items:center;justify-content:center;flex:0 0 auto;
+        ">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="var(--danger,#b42318)" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18"/><path d="M8 6V4h8v2"/>
+            <path d="M19 6l-1 14H6L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+          </svg>
+        </div>
+        <h3 id="confirmModalTitle" style="margin:0;flex:1;font-size:17px;font-weight:700;color:var(--ink,#0f1c2e);">
+          ${esc(title)}
+        </h3>
+        <button id="confirmClose" type="button" aria-label="Close" style="
+          background:transparent;border:none;cursor:pointer;padding:4px;
+          color:var(--muted,#6b7c93);display:flex;align-items:center;
+        ">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
         </button>
       </div>
-      <p class="confirm-body">${bodyHtml}</p>
-      <div class="confirm-actions">
-        <button class="button secondary confirm-cancel" type="button">Cancel</button>
-        <button class="button danger confirm-ok" type="button">${esc(confirmLabel)}</button>
+      <p style="margin:0 0 6px;font-size:14px;line-height:1.6;color:var(--ink,#0f1c2e);">
+        Are you sure you want to delete
+      </p>
+      <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:var(--ink,#0f1c2e);">
+        "${esc(name)}"
+      </p>
+      <p style="margin:0 0 20px;font-size:13px;color:var(--muted,#6b7c93);">
+        This action cannot be undone.
+      </p>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button id="confirmCancel" type="button" style="
+          min-height:38px;padding:0 16px;
+          border:1px solid var(--line,#d6e0f0);border-radius:8px;
+          background:var(--panel,#fff);color:var(--ink,#0f1c2e);
+          font:inherit;font-weight:650;cursor:pointer;
+        ">Cancel</button>
+        <button id="confirmOk" type="button" style="
+          min-height:38px;padding:0 16px;
+          border:1px solid var(--danger,#b42318);border-radius:8px;
+          background:var(--danger,#b42318);color:#fff;
+          font:inherit;font-weight:650;cursor:pointer;
+          display:inline-flex;align-items:center;gap:8px;
+        ">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18"/><path d="M8 6V4h8v2"/>
+            <path d="M19 6l-1 14H6L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+          </svg>
+          ${esc(confirmLabel)}
+        </button>
       </div>
     </div>
   `;
 
-  modal.querySelector(".error-modal-close").addEventListener("click", () => modal.remove());
-  modal.querySelector(".confirm-cancel").addEventListener("click",    () => modal.remove());
-  modal.querySelector(".confirm-ok").addEventListener("click", () => {
-    modal.remove();
+  const close = () => modal.remove();
+
+  modal.querySelector("#confirmClose").addEventListener("click", close);
+  modal.querySelector("#confirmCancel").addEventListener("click", close);
+  modal.querySelector("#confirmOk").addEventListener("click", () => {
+    close();
     onConfirm();
   });
-  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+
+  // Only close on backdrop click, not on box click
+  modal.addEventListener("click", e => {
+    if (e.target === modal) close();
+  });
 
   document.body.appendChild(modal);
-  setTimeout(() => modal.querySelector(".confirm-ok")?.focus(), 50);
+  setTimeout(() => modal.querySelector("#confirmOk")?.focus(), 50);
 }
-
 // =============================================================================
 // RENDER
 // =============================================================================
