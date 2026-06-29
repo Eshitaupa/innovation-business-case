@@ -1418,7 +1418,7 @@ function renderTable() {
     <tr>
       <td class="idea-cell">${esc(r.ideaName)}</td>
       <td>${esc(r.personDisplayName)}</td>
-      <td class="text-cell">${stripHtml(r.valueProposition)}</td>
+      <td class="text-cell">${stripHtml(r.problemStatement)}</td>
       <td class="number-cell">${fmtPlain(r.costSavings)}</td>
       <td class="number-cell">${fmtPct(r.efficiencyGain)}</td>
       <td class="number-cell">${fmtMo(r.paybackMonths)}</td>
