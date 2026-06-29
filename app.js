@@ -1454,7 +1454,7 @@ const CONFIG = {
   cacheKey: "ogc_innovation_cache_v1",
 
   // How long to wait for the Power Automate flow before aborting (ms)
-  flowTimeoutMs: 10000
+  flowTimeoutMs: 2000
 };
 
 // =============================================================================
@@ -1542,23 +1542,31 @@ async function fetchFlowData(timeoutMs = CONFIG.flowTimeoutMs) {
   }
 }
 
-// Silent background fetch — updates table when done, no spinner, no blocking
 async function fetchAndUpdateSilently(opts = {}) {
   if (state.bgRefreshing) return;
+
   state.bgRefreshing = true;
   showRefreshIndicator(true);
+
   try {
     const data = await fetchFlowData();
+
     applyFlowData(data);
     saveCache(data);
+
     populateDropdowns();
     buildPeopleSelect();
-    // Remove any temp records (created optimistically) — real ones now loaded
     render();
+
     if (opts.toast) showToast("✓ Data refreshed.");
   } catch (err) {
     console.warn("Background refresh failed:", err);
-    // Don't show error toast — stale cache is still usable
+
+    if (opts.showErrors) {
+      state.mode = "error";
+      renderBadge();
+      showToast("⚠ Could not refresh SharePoint data — " + err.message);
+    }
   } finally {
     state.bgRefreshing = false;
     showRefreshIndicator(false);
@@ -1601,35 +1609,25 @@ async function loadFromFlow() {
   const cached = loadCache();
 
   if (cached) {
-    // Instant render from cache — user sees data in <50ms
     applyFlowData(cached);
     render();
-    // Always kick off a background refresh so data stays current
+
+    // Refresh in background, do not block page load
     fetchAndUpdateSilently();
     return;
   }
 
-  // First ever visit — no cache, must wait for network
-  setBusy(true);
-  try {
-    const data = await fetchFlowData();
-    applyFlowData(data);
-    saveCache(data);
-  } catch (err) {
-    console.error("Flow load failed:", err);
-    state.records  = [];
-    state.allUsers = [];
-    state.choices  = {
-      department:      [...CONFIG.fallbackChoices.department],
-      confidenceLevel: [...CONFIG.fallbackChoices.confidenceLevel]
-    };
-    state.mode = "error";
-    showToast("⚠ Could not load SharePoint data — " + err.message);
-  } finally {
-    setBusy(false);
-  }
-}
+  state.records = [];
+  state.allUsers = [];
+  state.choices = {
+    department: [...CONFIG.fallbackChoices.department],
+    confidenceLevel: [...CONFIG.fallbackChoices.confidenceLevel]
+  };
+  state.mode = "connecting";
 
+  render();
+  fetchAndUpdateSilently({ toast: false, showErrors: true });
+}
 // Refresh button: show cache instantly, then fetch fresh
 async function reloadRecords() {
   const cached = loadCache();
@@ -2474,42 +2472,44 @@ async function saveCurrentCase(e) {
     });
   }
 
-  // Close drawer and render immediately — user is unblocked
+// Close drawer and render immediately — user is unblocked
   closeDrawer();
   render();
   showToast(isUpdate ? "Saving update…" : "Saving new case…");
 
+  // Unblock UI immediately
+  setBusy(false);
+
   try {
     const payload = buildSharePointPayload(record);
     console.log("📤 Saving payload:", JSON.stringify(payload, null, 2));
+
     await saveViaFlow(payload);
 
-    // Invalidate cache so the background refresh picks up the real record
     clearCache();
 
-    // Kick off a silent background fetch to get the real ID and server timestamps
-    // This replaces the temp record with the authoritative SharePoint data
-    await fetchAndUpdateSilently();
+    // Important: do not await this
+    fetchAndUpdateSilently();
 
     showToast(isUpdate ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
   } catch (err) {
     console.error("Save failed:", err);
 
-    // Roll back the optimistic change
     if (isUpdate) {
-      // Re-fetch from cache to restore previous state
       const cached = loadCache();
-      if (cached) { applyFlowData(cached); render(); }
+      if (cached) {
+        applyFlowData(cached);
+        render();
+      }
     } else {
-      // Remove the temp record
       state.records = state.records.filter(r => !r._isTemp);
       render();
     }
 
-    const errMsg     = err.message || "";
+    const errMsg = err.message || "";
     const saveErrors = parseSaveError(errMsg);
+
     if (saveErrors.length) {
-      // Re-open the drawer with the data still in place so user can fix it
       openDrawer(record);
       showFieldErrors(saveErrors);
       showErrorModal(saveErrors);
