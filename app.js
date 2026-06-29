@@ -1373,6 +1373,7 @@
 //   return `"${t.replace(/"/g, '""')}"`;
 // }
 
+
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
@@ -1453,15 +1454,7 @@ const CONFIG = {
   cacheKey: "ogc_innovation_cache_v1",
 
   // How long to wait for the Power Automate flow before aborting (ms)
-  // PA cold-starts can take 8-12 s; 25 s gives enough room for one retry
-  flowTimeoutMs: 25000,
-
-  // Auto-retry on transient PA errors (502/503/504/AbortError)
-  // Delays between retries in ms — exponential backoff
-  retryDelays: [2000, 5000],
-
-  // How long save flow gets per attempt before abort
-  saveTimeoutMs: 20000
+  flowTimeoutMs: 10000
 };
 
 // =============================================================================
@@ -1531,21 +1524,10 @@ function applyFlowData(data) {
 // FETCH HELPERS
 // =============================================================================
 
-// Sleep helper for retry backoff
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-// Returns true for transient Power Automate / gateway errors worth retrying
-function isRetryable(err, status) {
-  if (err.name === "AbortError") return true;
-  if ([502, 503, 504].includes(status))  return true;
-  return false;
-}
-
-// One raw attempt at the list flow, with per-attempt timeout
-async function _fetchFlowOnce(timeoutMs) {
+// Fetch with a hard timeout — if Power Automate stalls, fail fast
+async function fetchFlowData(timeoutMs = CONFIG.flowTimeoutMs) {
   const ctrl  = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  let status  = 0;
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
       method:  "POST",
@@ -1553,60 +1535,8 @@ async function _fetchFlowOnce(timeoutMs) {
       signal:  ctrl.signal,
       body:    JSON.stringify({})
     });
-    status = res.status;
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      const err  = new Error(`Flow returned HTTP ${res.status}: ${body}`);
-      err.status = status;
-      throw err;
-    }
+    if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     return await res.json();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-// Fetch list data with automatic retry on transient PA errors
-async function fetchFlowData() {
-  const delays = CONFIG.retryDelays;
-  let lastErr;
-  for (let attempt = 0; attempt <= delays.length; attempt++) {
-    try {
-      return await _fetchFlowOnce(CONFIG.flowTimeoutMs);
-    } catch (err) {
-      lastErr = err;
-      const retryable = isRetryable(err, err.status || 0);
-      if (!retryable || attempt === delays.length) throw err;
-      const wait = delays[attempt];
-      console.warn(`List fetch attempt ${attempt + 1} failed (${err.message}). Retrying in ${wait}ms…`);
-      showRefreshIndicator(true, `Retrying… (${attempt + 1}/${delays.length})`);
-      await sleep(wait);
-    }
-  }
-  throw lastErr;
-}
-
-// One raw attempt at the save flow, with per-attempt timeout
-async function _saveFlowOnce(payload) {
-  const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), CONFIG.saveTimeoutMs);
-  let status  = 0;
-  try {
-    const res = await fetch(CONFIG.saveFlowUrl, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      signal:  ctrl.signal,
-      body:    JSON.stringify(payload)
-    });
-    status = res.status;
-    let text = "";
-    try { text = await res.text(); } catch { }
-    if (!res.ok) {
-      const err = new Error(`HTTP ${res.status}: ${text}`);
-      err.status = status;
-      throw err;
-    }
-    try { return text ? JSON.parse(text) : {}; } catch { return {}; }
   } finally {
     clearTimeout(timer);
   }
@@ -1623,28 +1553,28 @@ async function fetchAndUpdateSilently(opts = {}) {
     saveCache(data);
     populateDropdowns();
     buildPeopleSelect();
+    // Remove any temp records (created optimistically) — real ones now loaded
     render();
     if (opts.toast) showToast("✓ Data refreshed.");
   } catch (err) {
     console.warn("Background refresh failed:", err);
-    // Stale cache is still usable — don't alarm the user
+    // Don't show error toast — stale cache is still usable
   } finally {
     state.bgRefreshing = false;
     showRefreshIndicator(false);
   }
 }
 
-// Tiny indicator on the badge while background refresh/retry runs
-function showRefreshIndicator(on, label) {
+// Tiny pulsing indicator on the badge while background refresh runs
+function showRefreshIndicator(on) {
   const b = els.connectionBadge;
   if (!b) return;
   if (on) {
-    if (!b.dataset.prevText) b.dataset.prevText = b.textContent;
-    b.textContent = label || "⟳ Refreshing…";
+    b.dataset.prevText = b.textContent;
+    b.textContent = "⟳ Refreshing…";
     b.classList.remove("warning");
   } else {
     b.textContent = b.dataset.prevText || (state.mode === "flow" ? "Power Automate connected" : "⚠ Flow unavailable");
-    b.dataset.prevText = "";
     b.classList.toggle("warning", state.mode !== "flow");
   }
 }
@@ -1665,44 +1595,28 @@ async function init() {
 }
 
 // =============================================================================
-// DATA LOAD — always serve cache instantly; fetch in background
+// DATA LOAD — show cache instantly, refresh in background always
 // =============================================================================
 async function loadFromFlow() {
   const cached = loadCache();
 
   if (cached) {
-    // Instant render from cache (<50ms) regardless of whether this is a
-    // hard refresh or soft navigation — user always sees data immediately
+    // Instant render from cache — user sees data in <50ms
     applyFlowData(cached);
     render();
-    // Kick off background refresh — never blocks the page
+    // Always kick off a background refresh so data stays current
     fetchAndUpdateSilently();
     return;
   }
 
-  // Very first visit ever — no cache yet; must wait for at least one
-  // successful fetch. Show a minimal loading state, retry on failure.
+  // First ever visit — no cache, must wait for network
   setBusy(true);
-  showRefreshIndicator(true, "Connecting…");
-  const delays = CONFIG.retryDelays;
-  let lastErr;
-  for (let attempt = 0; attempt <= delays.length; attempt++) {
-    try {
-      const data = await fetchFlowData();
-      applyFlowData(data);
-      saveCache(data);
-      lastErr = null;
-      break;
-    } catch (err) {
-      lastErr = err;
-      if (attempt < delays.length) {
-        showRefreshIndicator(true, `Connecting… (retry ${attempt + 1})`);
-        await sleep(delays[attempt]);
-      }
-    }
-  }
-  if (lastErr) {
-    console.error("Flow load failed after retries:", lastErr);
+  try {
+    const data = await fetchFlowData();
+    applyFlowData(data);
+    saveCache(data);
+  } catch (err) {
+    console.error("Flow load failed:", err);
     state.records  = [];
     state.allUsers = [];
     state.choices  = {
@@ -1710,12 +1624,10 @@ async function loadFromFlow() {
       confidenceLevel: [...CONFIG.fallbackChoices.confidenceLevel]
     };
     state.mode = "error";
-    showToast("⚠ Could not load data — will retry automatically.");
-    // Schedule one more attempt after 15s in case PA just needed a warm-up
-    setTimeout(() => fetchAndUpdateSilently({ toast: true }), 15000);
+    showToast("⚠ Could not load SharePoint data — " + err.message);
+  } finally {
+    setBusy(false);
   }
-  setBusy(false);
-  showRefreshIndicator(false);
 }
 
 // Refresh button: show cache instantly, then fetch fresh
@@ -2572,12 +2484,12 @@ async function saveCurrentCase(e) {
     console.log("📤 Saving payload:", JSON.stringify(payload, null, 2));
     await saveViaFlow(payload);
 
-    // Invalidate cache so next background refresh picks up the real record
+    // Invalidate cache so the background refresh picks up the real record
     clearCache();
 
-    // Fire-and-forget background sync — does NOT block the user
-    // The temp record will be replaced by the real one when this completes
-    fetchAndUpdateSilently();  // intentionally no await
+    // Kick off a silent background fetch to get the real ID and server timestamps
+    // This replaces the temp record with the authoritative SharePoint data
+    await fetchAndUpdateSilently();
 
     showToast(isUpdate ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
   } catch (err) {
@@ -2624,24 +2536,16 @@ function parseSaveError(errMsg) {
   return errors;
 }
 
-// Save with automatic retry on transient 502/503/504 errors
 async function saveViaFlow(payload) {
-  const delays = CONFIG.retryDelays;
-  let lastErr;
-  for (let attempt = 0; attempt <= delays.length; attempt++) {
-    try {
-      return await _saveFlowOnce(payload);
-    } catch (err) {
-      lastErr = err;
-      const retryable = isRetryable(err, err.status || 0);
-      if (!retryable || attempt === delays.length) throw err;
-      const wait = delays[attempt];
-      console.warn(`Save attempt ${attempt + 1} failed (${err.message}). Retrying in ${wait}ms…`);
-      showToast(`Save failed, retrying… (${attempt + 1}/${delays.length})`);
-      await sleep(wait);
-    }
-  }
-  throw lastErr;
+  const res = await fetch(CONFIG.saveFlowUrl, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(payload)
+  });
+  let text = "";
+  try { text = await res.text(); } catch { }
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
+  try { return text ? JSON.parse(text) : {}; } catch { return {}; }
 }
 
 function buildSharePointPayload(record) {
