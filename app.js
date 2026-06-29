@@ -635,7 +635,7 @@ const CONFIG = {
 
   saveFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/f44390bc94a847d29342ab85b1b8ec2d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=SkMtR9vKtj7Mf07QWgksvnK8m1OUKOJR4D7TGiZt9bg",
 
-  deleteFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/b78b3db90e304888a38d3f594c1932dd/triggers/manual/paths/invoke?api-version=1",
+deleteFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/b78b3db90e304888a38d3f594c1932dd/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=YOUR_DELETE_FLOW_SIG_HERE",
 
   fieldMap: {
     id:                     "Id",
@@ -1318,10 +1318,11 @@ async function deleteRecord(id) {
 
   const oldRecords = [...state.records];
 
-  try {
-    state.records = state.records.filter(r => String(r.id) !== String(id));
-    render();
+  // 1. Optimistically remove from UI immediately
+  state.records = state.records.filter(r => String(r.id) !== String(id));
+  render();
 
+  try {
     const res = await fetch(CONFIG.deleteFlowUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1329,12 +1330,19 @@ async function deleteRecord(id) {
     });
 
     const text = await res.text().catch(() => "");
-    if (!res.ok) throw new Error(text || `HTTP ${res.status}`);
+
+    if (!res.ok) {
+      console.error("Delete flow error:", res.status, text);
+      throw new Error(`HTTP ${res.status}: ${text || "Flow returned an error"}`);
+    }
 
     showToast("✓ Record deleted.");
+
   } catch (err) {
+    // Restore the record in UI if SharePoint call failed
     state.records = oldRecords;
     render();
+    console.error("Delete failed:", err);
     showToast("⚠ Delete failed — " + err.message);
   }
 }
