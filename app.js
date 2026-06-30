@@ -393,7 +393,11 @@ async function loadFromFlow() {
       ? data.users.filter(u => u.Email)
       : [];
 
-    state.records = extractRows(data).map(mapItem);
+    localStorage.setItem("ogcBusinessCases", JSON.stringify({
+  records: state.records,
+  choices: state.choices,
+  allUsers: state.allUsers
+}));
     state.mode    = "flow";
   } catch (err) {
     console.error("Flow load failed:", err);
@@ -406,7 +410,7 @@ async function loadFromFlow() {
     state.mode = "error";
     showToast("⚠ Could not load SharePoint data — " + err.message);
   } finally {
-    setBusy(false);
+    if (showLoader) setBusy(false);
   }
 }
 
@@ -423,8 +427,8 @@ function loadCachedData() {
   } catch {
   }
 }
-async function reloadRecords() {
-  setBusy(true);
+async function reloadRecords(showLoader = true) {
+  if (showLoader) setBusy(true);
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
       method:  "POST",
@@ -433,7 +437,11 @@ async function reloadRecords() {
     });
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data    = await res.json();
-    state.records = extractRows(data).map(mapItem);
+    localStorage.setItem("ogcBusinessCases", JSON.stringify({
+  records: state.records,
+  choices: state.choices,
+  allUsers: state.allUsers
+}));
     localStorage.setItem("ogcBusinessCases", JSON.stringify({
   records: state.records,
   choices: state.choices,
@@ -444,7 +452,7 @@ async function reloadRecords() {
     console.error("Reload failed:", err);
     showToast("⚠ Could not refresh data");
   } finally {
-    setBusy(false);
+    if (showLoader) setBusy(false);
   }
 }
 
@@ -681,10 +689,13 @@ function bindEvents() {
     renderTable();
   });
 
-  els.refreshButton.addEventListener("click", async () => {
-    await reloadRecords();
+  els.refreshButton.addEventListener("click", () => {
+  showToast("Refreshing in background...");
+  reloadRecords(false).then(() => {
     render();
+    showToast("✓ Latest SharePoint data loaded.");
   });
+});
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && els.drawer.classList.contains("open")) closeDrawer();
@@ -1200,7 +1211,7 @@ showToast("✓ Saved to SharePoint.");
       showToast("⚠ Save failed — see error details.");
     }
   } finally {
-    setBusy(false);
+    if (showLoader) setBusy(false);
   }
 }
 
