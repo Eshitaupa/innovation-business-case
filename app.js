@@ -1374,7 +1374,6 @@
 // }
 
 
-
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
@@ -1486,10 +1485,29 @@ async function init() {
   cacheElements();
   bindEvents();
   buildRichTextEditors();
+  renderLoadingSkeleton(); // show skeleton immediately before flow responds
   await loadFromFlow();
   populateDropdowns();
   buildPeopleSelect();
   render();
+}
+
+function renderLoadingSkeleton() {
+  // Show placeholder rows so the page doesn't look blank during initial load
+  const skeletonRow = () => `
+    <tr class="skeleton-row">
+      <td><div class="skel"></div></td>
+      <td><div class="skel skel-sm"></div></td>
+      <td><div class="skel"></div><div class="skel skel-sm" style="margin-top:4px"></div></td>
+      <td><div class="skel skel-sm"></div></td>
+      <td><div class="skel skel-sm"></div></td>
+      <td><div class="skel skel-sm"></div></td>
+      <td><div class="skel skel-sm"></div></td>
+      <td><div class="skel skel-sm"></div></td>
+      <td><div class="skel skel-sm"></div></td>
+      <td></td>
+    </tr>`;
+  els.caseRows.innerHTML = skeletonRow() + skeletonRow() + skeletonRow() + skeletonRow();
 }
 
 // =============================================================================
@@ -1796,6 +1814,7 @@ async function reloadRecords() {
     const data = await res.json();
     // Only replace records once we have good data
     const fresh = extractRows(data).map(mapItem);
+    console.log("🔄 Reload: raw field_12 samples:", extractRows(data).slice(0,3).map(r => ({id: r.Id, field_12: r.field_12})));
     if (fresh.length > 0 || snapshot.length === 0) {
       state.records = fresh;
     }
