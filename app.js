@@ -1372,8 +1372,6 @@
 //   const t = v == null ? "" : String(v);
 //   return `"${t.replace(/"/g, '""')}"`;
 // }
-
-
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
@@ -2563,43 +2561,39 @@ async function saveCurrentCase(e) {
       state.records.unshift(optimisticRecord);
     }
 
-    // Close drawer and show the updated table immediately
+    // Close drawer and show the updated table immediately — don't wait for the flow
     closeDrawer();
     render();
-    showToast(isUpdate ? "✓ Saving to SharePoint…" : "✓ Creating in SharePoint…");
+    showToast(isUpdate ? "✓ Saved locally — syncing to SharePoint…" : "✓ Created — syncing to SharePoint…");
 
-    // Now actually hit the API in the background
-    const saveResult = await saveViaFlow(payload);
+    // Restore save button right away since drawer is already closed
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = `<svg><use href="#icon-save"></use></svg> Save case`;
 
-    if (saveResult?.timedOut) {
-      showToast("⏳ Flow is slow — syncing when it completes…");
-    } else if (saveResult?.status502) {
-      showToast("⚠ SharePoint is slow — your record may have saved. Refreshing…");
-    } else {
-      showToast(isUpdate ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
-    }
-
-    // Background reload to get the real ID (for new records) and server timestamps
-    reloadRecords();
+    // Fire-and-forget: never await this — Power Automate 502s won't affect the user
+    saveViaFlow(payload)
+      .then(result => {
+        if (result?.status502 || result?.timedOut) {
+          // Flow timed out but SP likely saved — reload will confirm
+          showToast("⚠ SharePoint is slow — reloading to confirm…");
+        } else {
+          showToast(isUpdate ? "✓ Synced to SharePoint." : "✓ Created in SharePoint.");
+        }
+        // Always reload in background to get real ID and server timestamps
+        reloadRecords();
+      })
+      .catch(err => {
+        console.error("Background save failed:", err);
+        // Only reload — don't re-open drawer or show error modal for background errors
+        // The optimistic record is already shown; reload will either confirm or correct it
+        showToast("⚠ Sync issue — refreshing from SharePoint…");
+        reloadRecords();
+      });
 
   } catch (err) {
-    console.error("Save failed:", err);
-    // Roll back optimistic record on failure
-    await reloadRecords();
-    render();
-
-    const errMsg = err.message || "";
-    const saveErrors = parseSaveError(errMsg);
-    // Re-open drawer with original data so user can fix and retry
-    openDrawer(record);
-    if (saveErrors.length) {
-      showFieldErrors(saveErrors);
-      showErrorModal(saveErrors);
-    } else {
-      showErrorModal([{ field: "general", message: "Save failed: " + errMsg }]);
-      showToast("⚠ Save failed — see error details.");
-    }
-  } finally {
+    // This catch only fires for errors BEFORE the flow call (e.g. validation bugs)
+    console.error("Save setup failed:", err);
+    showToast("⚠ Unexpected error — " + (err.message || "please try again"));
     saveBtn.disabled = false;
     saveBtn.innerHTML = `<svg><use href="#icon-save"></use></svg> Save case`;
   }
