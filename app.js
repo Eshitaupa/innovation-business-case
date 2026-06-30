@@ -426,6 +426,10 @@ async function reloadRecords(showLoader = true) {
     if (showLoader) setBusy(false);
   }
 }
+function numericPart(v) {
+  const match = String(v ?? "").replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+  return match ? Number(match[0]) : 0;
+}
 function extractRows(data) {
   if (Array.isArray(data))       return data;
   if (Array.isArray(data.items)) return data.items;
@@ -872,11 +876,11 @@ function renderTable() {
       <td class="idea-cell">${esc(r.ideaName)}</td>
       <td>${esc(r.personDisplayName)}</td>
       <td class="text-cell">${stripHtml(r.problemStatement)}</td>
-      <td class="number-cell">${fmtPlain(r.costSavings)}</td>
+      <td class="number-cell">${esc(r.costSavings)}</td>
       <td class="number-cell">${fmtPct(r.efficiencyGain)}</td>
       <td class="number-cell">${fmtMo(r.paybackMonths)}</td>
       <td class="number-cell">${fmtPct(r.adoptionRate)}</td>
-      <td class="number-cell">${fmtPlain(r.revenueImpact)}</td>
+      <td class="number-cell">${esc(r.revenueImpact)}</td>
       <td class="number-cell">${fmtDate(r.modified || r.created)}</td>
       <td class="action-col">
         <div class="row-actions">
@@ -1352,7 +1356,7 @@ function choiceText(v) {
   return String(v);
 }
 
-const sum  = (recs, k) => recs.reduce((t, r) => t + (Number(r[k]) || 0), 0);
+const sum = (recs, k) => recs.reduce((t, r) => t + numericPart(r[k]), 0);
 const nums = (recs, k) => recs.map(r => Number(r[k])).filter(v => isFinite(v) && v > 0);
 const avg  = vals => vals.length ? vals.reduce((t, v) => t + v, 0) / vals.length : 0;
 
