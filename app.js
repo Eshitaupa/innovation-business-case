@@ -1126,10 +1126,28 @@ async function saveCurrentCase(e) {
   try {
     const payload = buildSharePointPayload(record);
     console.log("📤 Saving payload:", JSON.stringify(payload, null, 2));
-    await saveViaFlow(payload);
-    await reloadRecords();
-    closeDrawer();
-    render();
+    // await saveViaFlow(payload);
+    // await reloadRecords();
+    // closeDrawer();
+    // render();
+    const saved = await saveViaFlow(payload);
+
+const savedRecord = {
+  ...record,
+  id: saved.id || record.id,
+  modified: new Date().toISOString()
+};
+
+if (record.id) {
+  state.records = state.records.map(r =>
+    String(r.id) === String(record.id) ? { ...r, ...savedRecord } : r
+  );
+} else {
+  state.records.unshift(savedRecord);
+}
+
+closeDrawer();
+render();
     showToast(record.id ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
   } catch (err) {
     console.error("Save failed:", err);
