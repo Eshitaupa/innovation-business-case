@@ -1374,7 +1374,6 @@
 // }
 
 
-
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
@@ -1418,11 +1417,18 @@ deleteFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api
     modified:               "Modified"
   },
 
+  // Only fields whose SharePoint column type is "Number"
+  // Single-line-of-text columns that hold numbers must be sent as strings
   numberFields: new Set([
-    "costSavings","efficiencyGain","paybackMonths","activeUsers","adoptionRate",
-    "revenueImpact","cycleTimeReduction","productivityUplift","scheduleImpact",
-    "toolsPlatformCharges","licenseCost","developmentCost","supportMaintenanceCost",
-    "recurringCostAvoidance","marginImprovement"
+    "efficiencyGain","paybackMonths","activeUsers","adoptionRate",
+    "cycleTimeReduction","scheduleImpact"
+  ]),
+
+  // SP "Single line of text" columns that hold numeric values — send as string
+  textNumberFields: new Set([
+    "costSavings","revenueImpact","toolsPlatformCharges","licenseCost",
+    "developmentCost","supportMaintenanceCost","recurringCostAvoidance",
+    "productivityUplift","marginImprovement"
   ]),
 
   richTextFields: new Set([
@@ -1777,8 +1783,10 @@ async function loadFromFlow() {
   }
 }
 
-// CHANGED: reloadRecords now runs in the background — doesn't block UI
+// Keep existing records visible while fetching — only swap in new data on success
 async function reloadRecords() {
+  // Snapshot current records so the table never goes blank mid-fetch
+  const snapshot = [...state.records];
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
       method:  "POST",
@@ -1786,26 +1794,33 @@ async function reloadRecords() {
       body:    JSON.stringify({})
     });
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
-    const data    = await res.json();
-    state.records = extractRows(data).map(mapItem);
-    state.mode    = "flow";
+    const data = await res.json();
+    // Only replace records once we have good data
+    const fresh = extractRows(data).map(mapItem);
+    if (fresh.length > 0 || snapshot.length === 0) {
+      state.records = fresh;
+    }
+    state.mode = "flow";
     render();
   } catch (err) {
+    // Restore snapshot so nothing disappears on error
+    state.records = snapshot;
     console.error("Reload failed:", err);
     showToast("⚠ Could not refresh data");
+    render();
   }
 }
 
-// CHANGED: manual refresh button shows spinner feedback but doesn't block form interactions
+// Spin the refresh icon while loading; never hides existing rows
 async function handleRefresh() {
   const btn = els.refreshButton;
   btn.disabled = true;
-  btn.style.opacity = "0.5";
+  btn.classList.add("spinning");
   try {
     await reloadRecords();
   } finally {
     btn.disabled = false;
-    btn.style.opacity = "";
+    btn.classList.remove("spinning");
   }
 }
 
@@ -2529,9 +2544,12 @@ async function saveCurrentCase(e) {
       personDisplayName: state.selectedPerson?.displayName || record.personDisplayName || "",
       personEmail:       state.selectedPerson?.email       || record.personEmail       || "",
       personClaims:      state.selectedPerson?.claims      || record.personClaims      || "",
-      // coerce number fields
+      // coerce true Number fields; textNumber fields stay as strings
       ...Object.fromEntries(
         [...CONFIG.numberFields].map(k => [k, numOrZero(record[k])])
+      ),
+      ...Object.fromEntries(
+        [...CONFIG.textNumberFields].map(k => [k, record[k] ?? ""])
       )
     };
 
@@ -2551,8 +2569,15 @@ async function saveCurrentCase(e) {
     showToast(isUpdate ? "✓ Saving to SharePoint…" : "✓ Creating in SharePoint…");
 
     // Now actually hit the API in the background
-    await saveViaFlow(payload);
-    showToast(isUpdate ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
+    const saveResult = await saveViaFlow(payload);
+
+    if (saveResult?.timedOut) {
+      showToast("⏳ Flow is slow — syncing when it completes…");
+    } else if (saveResult?.status502) {
+      showToast("⚠ SharePoint is slow — your record may have saved. Refreshing…");
+    } else {
+      showToast(isUpdate ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
+    }
 
     // Background reload to get the real ID (for new records) and server timestamps
     reloadRecords();
@@ -2601,13 +2626,43 @@ function parseSaveError(errMsg) {
 }
 
 async function saveViaFlow(payload) {
-  const res = await fetch(CONFIG.saveFlowUrl, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify(payload)
-  });
+  // Power Automate flows can take 30-60s; use a generous timeout.
+  // A 502 "NoResponse" usually means SP saved but the flow response timed out —
+  // treat it as a warning (sync via reload) rather than a hard error.
+  const TIMEOUT_MS = 55000;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  let res;
+  try {
+    res = await fetch(CONFIG.saveFlowUrl, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload),
+      signal:  controller.signal
+    });
+  } catch (fetchErr) {
+    clearTimeout(timer);
+    if (fetchErr.name === "AbortError") {
+      // Timed out — SP may still have saved; reload will confirm
+      console.warn("Save flow timed out — reloading to confirm.");
+      return { timedOut: true };
+    }
+    throw fetchErr;
+  }
+  clearTimeout(timer);
+
   let text = "";
   try { text = await res.text(); } catch { /* ignore */ }
+
+  // 502 from Power Automate almost always means SP received the write but
+  // the flow response didn't make it back in time — not a real save failure.
+  if (res.status === 502) {
+    console.warn("Save flow returned 502 — treating as probable success, will reload.");
+    return { status502: true };
+  }
+
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
   try { return text ? JSON.parse(text) : {}; } catch { return {}; }
 }
@@ -2626,7 +2681,12 @@ function buildSharePointPayload(record) {
     if (s === "") continue;
 
     if (CONFIG.numberFields.has(jsKey)) {
-      payload[spField] = Number(s);
+      // True SP Number column — send as JS number
+      const n = Number(s);
+      payload[spField] = isNaN(n) ? 0 : n;
+    } else if (CONFIG.textNumberFields.has(jsKey)) {
+      // SP "Single line of text" that holds a number — send as string
+      payload[spField] = s;
     } else {
       payload[spField] = s;
     }
