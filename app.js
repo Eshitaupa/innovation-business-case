@@ -105,19 +105,13 @@ async function init() {
   cacheElements();
   bindEvents();
   buildRichTextEditors();
-  // await loadFromFlow();
-  // populateDropdowns();
-  // buildPeopleSelect();
-  // render();
-  loadCachedData();
-populateDropdowns();
-buildPeopleSelect();
-render();
 
-loadFromFlow().then(() => {
+  loadCachedData();
   populateDropdowns();
+  buildPeopleSelect();
   render();
-});
+
+  showToast("Loaded cached data. Click Refresh for latest SharePoint data.");
 }
 
 // =============================================================================
@@ -366,51 +360,30 @@ async function loadFromFlow() {
   setBusy(true);
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({})
+      body: JSON.stringify({})
     });
+
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
+
     const data = await res.json();
 
-    if (data.choices) {
-      state.choices.confidenceLevel =
-        Array.isArray(data.choices.confidenceLevel) && data.choices.confidenceLevel.length
-          ? data.choices.confidenceLevel
-          : [...CONFIG.fallbackChoices.confidenceLevel];
+    const rows = extractRows(data);
+    state.records = rows.map(mapItem);
 
-      state.choices.department =
-        Array.isArray(data.choices.department) && data.choices.department.length
-          ? data.choices.department
-          : [...CONFIG.fallbackChoices.department];
-    } else {
-      const rows = extractRows(data);
-      state.choices.department      = uniqueChoices(rows, "field_2")                 || [...CONFIG.fallbackChoices.department];
-      state.choices.confidenceLevel = uniqueChoices(rows, "Confidence_x0020_Level") || [...CONFIG.fallbackChoices.confidenceLevel];
-    }
-
-    state.allUsers = Array.isArray(data.users)
-      ? data.users.filter(u => u.Email)
-      : [];
+    state.mode = "flow";
 
     localStorage.setItem("ogcBusinessCases", JSON.stringify({
-  records: state.records,
-  choices: state.choices,
-  allUsers: state.allUsers
-}));
-    state.mode    = "flow";
+      records: state.records,
+      choices: state.choices,
+      allUsers: state.allUsers
+    }));
   } catch (err) {
     console.error("Flow load failed:", err);
-    state.records  = [];
-    state.allUsers = [];
-    state.choices  = {
-      department:      [...CONFIG.fallbackChoices.department],
-      confidenceLevel: [...CONFIG.fallbackChoices.confidenceLevel]
-    };
-    state.mode = "error";
-    showToast("⚠ Could not load SharePoint data — " + err.message);
+    showToast("⚠ Could not load SharePoint data.");
   } finally {
-    if (showLoader) setBusy(false);
+    setBusy(false);
   }
 }
 
@@ -427,38 +400,32 @@ function loadCachedData() {
   } catch {
   }
 }
+
 async function reloadRecords(showLoader = true) {
   if (showLoader) setBusy(true);
+
   try {
     const res = await fetch(CONFIG.listFlowUrl, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({})
+      body: JSON.stringify({})
     });
+
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
-    const data    = await res.json();
+
+    const data = await res.json();
+    state.records = extractRows(data).map(mapItem);
+    state.mode = "flow";
+
     localStorage.setItem("ogcBusinessCases", JSON.stringify({
-  records: state.records,
-  choices: state.choices,
-  allUsers: state.allUsers
-}));
-    localStorage.setItem("ogcBusinessCases", JSON.stringify({
-  records: state.records,
-  choices: state.choices,
-  allUsers: state.allUsers
-}));
-    state.mode    = "flow";
-  } catch (err) {
-    console.error("Reload failed:", err);
-    showToast("⚠ Could not refresh data");
+      records: state.records,
+      choices: state.choices,
+      allUsers: state.allUsers
+    }));
   } finally {
     if (showLoader) setBusy(false);
   }
 }
-
-// =============================================================================
-// DATA HELPERS
-// =============================================================================
 function extractRows(data) {
   if (Array.isArray(data))       return data;
   if (Array.isArray(data.items)) return data.items;
@@ -1211,8 +1178,7 @@ showToast("✓ Saved to SharePoint.");
       showToast("⚠ Save failed — see error details.");
     }
   } finally {
-    if (showLoader) setBusy(false);
-  }
+state.records = extractRows(data).map(mapItem);  }
 }
 
 function parseSaveError(errMsg) {
