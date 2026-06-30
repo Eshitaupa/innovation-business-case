@@ -105,10 +105,19 @@ async function init() {
   cacheElements();
   bindEvents();
   buildRichTextEditors();
-  await loadFromFlow();
+  // await loadFromFlow();
+  // populateDropdowns();
+  // buildPeopleSelect();
+  // render();
+  loadCachedData();
+populateDropdowns();
+buildPeopleSelect();
+render();
+
+loadFromFlow().then(() => {
   populateDropdowns();
-  buildPeopleSelect();
   render();
+});
 }
 
 // =============================================================================
@@ -401,6 +410,19 @@ async function loadFromFlow() {
   }
 }
 
+function loadCachedData() {
+  try {
+    const cached = localStorage.getItem("ogcBusinessCases");
+    if (!cached) return;
+
+    const data = JSON.parse(cached);
+    state.records = data.records || [];
+    state.choices = data.choices || state.choices;
+    state.allUsers = data.allUsers || [];
+    state.mode = "flow";
+  } catch {
+  }
+}
 async function reloadRecords() {
   setBusy(true);
   try {
@@ -412,6 +434,11 @@ async function reloadRecords() {
     if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
     const data    = await res.json();
     state.records = extractRows(data).map(mapItem);
+    localStorage.setItem("ogcBusinessCases", JSON.stringify({
+  records: state.records,
+  choices: state.choices,
+  allUsers: state.allUsers
+}));
     state.mode    = "flow";
   } catch (err) {
     console.error("Reload failed:", err);
@@ -1124,31 +1151,43 @@ async function saveCurrentCase(e) {
 
   setBusy(true);
   try {
-    const payload = buildSharePointPayload(record);
-    console.log("📤 Saving payload:", JSON.stringify(payload, null, 2));
-    // await saveViaFlow(payload);
-    // await reloadRecords();
-    // closeDrawer();
-    // render();
-    const saved = await saveViaFlow(payload);
+const payload = buildSharePointPayload(record);
 
+if (record.id) {
+  const savedRecord = {
+    ...record,
+    modified: new Date().toISOString()
+  };
+
+  state.records = state.records.map(r =>
+    String(r.id) === String(record.id) ? { ...r, ...savedRecord } : r
+  );
+
+  closeDrawer();
+  render();
+  showToast("✓ Updated locally. Syncing to SharePoint...");
+
+  saveViaFlow(payload)
+    .then(() => showToast("✓ Updated in SharePoint."))
+    .catch(err => {
+      console.error("Save failed:", err);
+      showToast("⚠ SharePoint sync failed. Click Refresh.");
+    });
+
+  return;
+}
+
+const saved = await saveViaFlow(payload);
 const savedRecord = {
   ...record,
   id: saved.id || record.id,
   modified: new Date().toISOString()
 };
 
-if (record.id) {
-  state.records = state.records.map(r =>
-    String(r.id) === String(record.id) ? { ...r, ...savedRecord } : r
-  );
-} else {
-  state.records.unshift(savedRecord);
-}
-
+state.records.unshift(savedRecord);
 closeDrawer();
 render();
-    showToast(record.id ? "✓ Updated in SharePoint." : "✓ Saved to SharePoint.");
+showToast("✓ Saved to SharePoint.");
   } catch (err) {
     console.error("Save failed:", err);
     const errMsg = err.message || "";
