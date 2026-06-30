@@ -42,13 +42,14 @@ deleteFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api
     modified:               "Modified"
   },
 
-  numberFields: new Set([
-    "costSavings","efficiencyGain","paybackMonths","activeUsers","adoptionRate",
-    "revenueImpact","cycleTimeReduction","productivityUplift","scheduleImpact",
-    "toolsPlatformCharges","licenseCost","developmentCost","supportMaintenanceCost",
-    "recurringCostAvoidance","marginImprovement"
-  ]),
-
+numberFields: new Set([
+  "efficiencyGain",
+  "paybackMonths",
+  "activeUsers",
+  "adoptionRate",
+  "cycleTimeReduction",
+  "scheduleImpact"
+]),
   richTextFields: new Set([
     "problemStatement","currentWorkarounds","proposedSolution","mvpScope",
     "valueProposition","goToMarketChannels","changeManagement","rolloutPlan","scalabilityNotes"
@@ -452,24 +453,24 @@ function mapItem(item) {
     enabler:                item.field_9  || "",
     unfairAdvantage:        item.field_10 || "",
     valueProposition:       item.field_11 || "",
-    costSavings:            numOrZero(item.field_12),
+    costSavings:            item.field_12 || "",
     efficiencyGain:         numOrZero(item.field_13),
     paybackMonths:          numOrZero(item.field_14),
     activeUsers:            numOrZero(item.field_15),
     adoptionRate:           numOrZero(item.field_16),
-    revenueImpact:          numOrZero(item.field_17),
+    revenueImpact:          item.field_17 || "",
     cycleTimeReduction:     numOrZero(item.field_18),
-    productivityUplift:     numOrZero(item.field_19),
+    productivityUplift:     item.field_19 || "",
     scheduleImpact:         numOrZero(item.field_20),
     goToMarketChannels:     item.field_21 || "",
     changeManagement:       item.field_22 || "",
     rolloutPlan:            item.field_23 || "",
-    toolsPlatformCharges:   numOrZero(item.field_24),
-    licenseCost:            numOrZero(item.field_25),
-    developmentCost:        numOrZero(item.field_26),
-    supportMaintenanceCost: numOrZero(item.field_27),
-    recurringCostAvoidance: numOrZero(item.field_28),
-    marginImprovement:      numOrZero(item.field_29),
+    toolsPlatformCharges:   item.field_24 || "",
+    licenseCost:            item.field_25 || "",
+    developmentCost:        item.field_26 || "",
+    supportMaintenanceCost: item.field_27 || "",
+    recurringCostAvoidance: item.field_28|| "",
+    marginImprovement:      item.field_29 || "",
     scalabilityNotes:       item.field_30 || "",
     confidenceLevel:        choiceText(item.Confidence_x0020_Level),
     created:                item.Created  || "",
