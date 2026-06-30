@@ -1372,6 +1372,9 @@
 //   const t = v == null ? "" : String(v);
 //   return `"${t.replace(/"/g, '""')}"`;
 // }
+
+
+
 const CONFIG = {
   listTitle: "OGC Innovation Business Case",
   sharePointSiteUrl: "https://burnsmcd.sharepoint.com/sites/Location-India/IWC/PNI",
@@ -1415,19 +1418,17 @@ deleteFlowUrl: "https://defaultbfbb9a2b6d994e78b3c795005d555c.8b.environment.api
     modified:               "Modified"
   },
 
-  // Only fields whose SharePoint column type is "Number"
-  // Single-line-of-text columns that hold numbers must be sent as strings
+  // Fields the Power Automate flow schema defines as "integer" — must be sent as numbers.
+  // Source of truth is the flow's Request Body JSON Schema (not the SP column type).
   numberFields: new Set([
-    "efficiencyGain","paybackMonths","activeUsers","adoptionRate",
-    "cycleTimeReduction","scheduleImpact"
+    "costSavings","efficiencyGain","paybackMonths","activeUsers","adoptionRate",
+    "revenueImpact","cycleTimeReduction","productivityUplift","scheduleImpact",
+    "toolsPlatformCharges","licenseCost","developmentCost","supportMaintenanceCost",
+    "recurringCostAvoidance","marginImprovement"
   ]),
 
-  // SP "Single line of text" columns that hold numeric values — send as string
-  textNumberFields: new Set([
-    "costSavings","revenueImpact","toolsPlatformCharges","licenseCost",
-    "developmentCost","supportMaintenanceCost","recurringCostAvoidance",
-    "productivityUplift","marginImprovement"
-  ]),
+  // No text-number fields — the flow schema treats all numeric fields as integer
+  textNumberFields: new Set([]),
 
   richTextFields: new Set([
     "problemStatement","currentWorkarounds","proposedSolution","mvpScope",
@@ -2675,12 +2676,9 @@ function buildSharePointPayload(record) {
     if (s === "") continue;
 
     if (CONFIG.numberFields.has(jsKey)) {
-      // True SP Number column — send as JS number
-      const n = Number(s);
-      payload[spField] = isNaN(n) ? 0 : n;
-    } else if (CONFIG.textNumberFields.has(jsKey)) {
-      // SP "Single line of text" that holds a number — send as string
-      payload[spField] = s;
+      // Flow schema expects integer — parse and round
+      const n = parseFloat(s);
+      payload[spField] = isNaN(n) ? 0 : Math.round(n * 100) / 100; // keep up to 2 decimal places
     } else {
       payload[spField] = s;
     }
