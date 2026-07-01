@@ -114,9 +114,6 @@ async function init() {
   showToast("Loaded cached data. Click Refresh for latest SharePoint data.");
 }
 
-// =============================================================================
-// RICH TEXT EDITOR
-// =============================================================================
 function buildRichTextEditors() {
   CONFIG.richTextFields.forEach(fieldName => {
     const textarea = els.caseForm?.elements[fieldName];
@@ -353,9 +350,6 @@ function clearAllEditors() {
   state.richTextValues = {};
 }
 
-// =============================================================================
-// DATA LOAD
-// =============================================================================
 async function loadFromFlow() {
   setBusy(true);
   try {
