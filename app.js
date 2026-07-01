@@ -365,7 +365,14 @@ async function loadFromFlow() {
       body: JSON.stringify({})
     });
 
-    if (!res.ok) throw new Error(`Flow returned HTTP ${res.status}`);
+    const body = await res.text();
+
+console.log("Status:", res.status);
+console.log("Response:", body);
+
+if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${body}`);
+}
 
     const data = await res.json();
 
