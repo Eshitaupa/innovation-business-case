@@ -368,7 +368,7 @@ if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${body}`);
 }
 
-    const data = await res.json();
+    const data = JSON.parse(body);
 
     const rows = extractRows(data);
     state.records = rows.map(mapItem);
