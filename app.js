@@ -635,13 +635,15 @@ function bindEvents() {
     renderTable();
   });
 
-  els.refreshButton.addEventListener("click", () => {
-  showToast("Refreshing in background...");
-  reloadRecords(false).then(() => {
-    render();
-    showToast("✓ Latest SharePoint data loaded.");
-  });
+els.refreshButton.addEventListener("click", async () => {
+  showToast("Refreshing...");
+  await loadFromFlow();
+  populateDropdowns();
+  buildPeopleSelect();
+  render();
+  showToast("✓ Latest SharePoint data loaded.");
 });
+
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && els.drawer.classList.contains("open")) closeDrawer();
@@ -1157,7 +1159,8 @@ showToast("✓ Saved to SharePoint.");
       showToast("⚠ Save failed — see error details.");
     }
   } finally {
-state.records = extractRows(data).map(mapItem);  }
+        setBusy(false);
+  }
 }
 
 function parseSaveError(errMsg) {
